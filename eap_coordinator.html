@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EAP Lifecycle Coordinator</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#eef2f7;color:#1a2340;line-height:1.5;min-height:100vh}
+a{color:inherit}
+
+/* ── Banner ── */
+.banner{background:linear-gradient(90deg,#0d1b4b 0%,#1565c0 55%,#1976d2 100%);color:#fff;padding:20px 28px 16px;margin-bottom:22px}
+.banner h1{font-size:1.65em;font-weight:800;letter-spacing:-.3px;margin-bottom:3px}
+.banner p{opacity:.78;font-size:.88em}
+.container{max-width:1180px;margin:0 auto;padding:0 18px 48px}
+
+/* ── Upload card ── */
+.card{background:#fff;border:1px solid #e0e8f0;border-radius:12px;padding:22px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+.drop-zone{border:2px dashed #b0c4de;border-radius:10px;padding:32px;text-align:center;cursor:pointer;transition:.18s}
+.drop-zone:hover,.drop-zone.over{border-color:#1565c0;background:#f0f6ff}
+.drop-zone h3{color:#1565c0;font-size:1.05em;margin-bottom:6px}
+.drop-zone p{color:#7a8db0;font-size:.87em}
+#file-input{display:none}
+.btn-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;justify-content:center}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 18px;border-radius:8px;font-size:.88em;font-weight:600;cursor:pointer;border:none;transition:.15s;white-space:nowrap}
+.btn-primary{background:#1565c0;color:#fff}.btn-primary:hover{background:#0d4fa0}
+.btn-ghost{background:#fff;color:#1565c0;border:1.5px solid #c5d5e8}.btn-ghost:hover{background:#f0f6ff}
+.btn-green{background:#2e7d32;color:#fff}.btn-green:hover{background:#1b5e20}
+.btn-sm{padding:5px 11px;font-size:.8em}
+
+/* ── Metrics ── */
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+.mbox{background:#fff;border:1px solid #e0e8f0;border-radius:10px;padding:14px 10px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.mbox .num{font-size:2.1em;font-weight:800;line-height:1.1}
+.mbox .lbl{font-size:.7em;text-transform:uppercase;color:#7a8db0;letter-spacing:.6px;margin-top:2px}
+
+/* ── Filters ── */
+.filter-bar{background:#fff;border:1px solid #e0e8f0;border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.filter-bar label{font-size:.76em;text-transform:uppercase;color:#7a8db0;font-weight:600;letter-spacing:.5px}
+.filter-bar select{border:1px solid #cdd8ea;border-radius:6px;padding:5px 9px;font-size:.86em;background:#fff}
+.filter-bar .spacer{flex:1}
+
+/* ── Action cards ── */
+.action-card{background:#fff;border:1px solid #e0e8f0;border-radius:10px;margin-bottom:9px;box-shadow:0 1px 3px rgba(0,0,0,.04);overflow:hidden}
+.card-hd{display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;user-select:none}
+.card-hd:hover{background:#fafbff}
+.card-hd .chev{margin-left:auto;font-size:.72em;color:#aab;transition:.2s}
+.card-hd.open .chev{transform:rotate(180deg)}
+.card-bd{display:none;padding:15px 16px;border-top:1px solid #edf0f7}
+.card-bd.open{display:block}
+.stripe-high{border-left:4px solid #ef5350}
+.stripe-medium{border-left:4px solid #ffa726}
+.stripe-low{border-left:4px solid #66bb6a}
+
+/* ── Badge ── */
+.badge{display:inline-flex;align-items:center;padding:2px 10px;border-radius:12px;font-size:.73em;font-weight:700;letter-spacing:.3px}
+.b-high{background:#fde8e8;color:#b71c1c;border:1px solid #ef9a9a}
+.b-med{background:#fff8e1;color:#e65100;border:1px solid #ffd54f}
+.b-low{background:#e8f5e9;color:#1b5e20;border:1px solid #a5d6a7}
+
+/* ── Info grid ── */
+.info-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:10px 0 12px}
+.ig .lbl{font-size:.69em;text-transform:uppercase;color:#8897b0;letter-spacing:.5px;font-weight:600}
+.ig .val{font-size:.88em;color:#1a2340;font-weight:500;margin-top:1px}
+.team-str{font-size:.76em;color:#9baabb;margin:2px 0 10px}
+.touch-line{font-size:.82em;font-weight:600;margin:4px 0 10px}
+.tw-red{color:#b71c1c}.tw-amber{color:#e65100}.tw-green{color:#1b5e20}
+
+/* ── Tabs ── */
+.tabs{display:flex;border-bottom:2px solid #edf0f7;margin-bottom:12px}
+.tab{padding:7px 15px;font-size:.84em;font-weight:600;cursor:pointer;border:none;background:none;color:#7a8db0;border-bottom:2px solid transparent;margin-bottom:-2px;transition:.15s}
+.tab:hover{color:#1565c0}
+.tab.on{color:#1565c0;border-bottom-color:#1565c0}
+.pane{display:none}
+.pane.on{display:block}
+
+/* ── Draft textarea ── */
+.draft-note{font-size:.76em;color:#9baabb;margin-bottom:5px}
+textarea.draft{width:100%;border:1px solid #cdd8ea;border-radius:8px;padding:11px;font-size:.86em;line-height:1.65;resize:vertical;font-family:inherit;color:#1a2340;background:#fafbff}
+textarea.jira{font-family:'Courier New',monospace;font-size:.8em;min-height:380px}
+textarea.email{min-height:320px}
+.copy-row{display:flex;gap:8px;margin-top:8px}
+
+/* ── Paste analysis ── */
+.paste-card{margin-bottom:16px}
+.paste-card summary{cursor:pointer;font-weight:600;font-size:.95em;color:#1565c0;padding:4px 0}
+.paste-card details{background:#fff;border:1px solid #e0e8f0;border-radius:10px;padding:14px 16px}
+.paste-card textarea{width:100%;height:110px;border:1px solid #cdd8ea;border-radius:8px;padding:10px;font-size:.87em;resize:vertical;margin:8px 0}
+#signal-out{background:#f0f6ff;border-left:4px solid #1565c0;border-radius:6px;padding:10px 14px;font-size:.87em;display:none;margin-top:8px;white-space:pre-wrap}
+
+/* ── Empty state ── */
+#empty{text-align:center;padding:64px 20px;color:#9baabb}
+#empty .ico{font-size:3.2em;margin-bottom:14px}
+#empty h3{color:#546;font-size:1.1em;margin-bottom:8px}
+#empty p{font-size:.88em}
+
+.section-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.section-hd h2{font-size:1em;font-weight:700}
+hr.divider{border:none;border-top:1px solid #edf0f7;margin:10px 0}
+.footer{text-align:center;font-size:.76em;color:#aab;margin-top:28px}
+
+@media(max-width:700px){
+.metrics{grid-template-columns:1fr 1fr}
+.info-grid{grid-template-columns:1fr 1fr}
+.filter-bar{flex-direction:column;align-items:flex-start}
+}
+</style>
+</head>
+<body>
+
+<div class="banner">
+  <h1>🚀 EAP Lifecycle Coordinator</h1>
+  <p>No setup · No API keys · No Python · Open this file and go</p>
+</div>
+
+<div class="container">
+
+<!-- Upload -->
+<div class="card">
+  <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+    <div style="font-size:2em;margin-bottom:8px">📂</div>
+    <h3>Drop your EAP CSV or Excel file here</h3>
+    <p>or click to browse &nbsp;·&nbsp; CSV / XLSX / XLS accepted</p>
+  </div>
+  <input type="file" id="file-input" accept=".csv,.xlsx,.xls">
+  <div class="btn-row">
+    <button class="btn btn-ghost" onclick="loadSample()">📋 Load Sample Data (12 customers)</button>
+    <button class="btn btn-ghost" onclick="downloadTemplate()">⬇️ Download Blank Template</button>
+    <button class="btn btn-green" id="export-csv-btn" onclick="exportCSV()" style="display:none">⬇️ Export Action Queue</button>
+    <button class="btn btn-green" id="export-drafts-btn" onclick="exportDrafts()" style="display:none">⬇️ Export All Drafts</button>
+  </div>
+</div>
+
+<!-- Paste & Analyze -->
+<div class="paste-card">
+  <details>
+    <summary>📋 Paste an email or Teams message — detect signals instantly (no API needed)</summary>
+    <p style="font-size:.84em;color:#7a8db0;margin:8px 0">Paste any email or Teams message. The tool detects EAP signals and tells you what to update and do next.</p>
+    <textarea id="paste-in" placeholder="Paste email body or Teams message here…"></textarea>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" onclick="analyzeText()">🔍 Analyze Text</button>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('paste-in').value='';document.getElementById('signal-out').style.display='none'">Clear</button>
+    </div>
+    <div id="signal-out"></div>
+  </details>
+</div>
+
+<!-- Metrics -->
+<div class="metrics" id="metrics" style="display:none">
+  <div class="mbox"><div class="num" id="m-total" style="color:#1565c0">0</div><div class="lbl">Total Actions</div></div>
+  <div class="mbox"><div class="num" id="m-high"  style="color:#b71c1c">0</div><div class="lbl">High Priority</div></div>
+  <div class="mbox"><div class="num" id="m-med"   style="color:#e65100">0</div><div class="lbl">Medium</div></div>
+  <div class="mbox"><div class="num" id="m-low"   style="color:#1b5e20">0</div><div class="lbl">Low</div></div>
+</div>
+
+<!-- Filters -->
+<div class="filter-bar" id="filter-bar" style="display:none">
+  <label>EAP</label>
+  <select id="f-eap" onchange="renderQueue()"><option value="">All</option></select>
+  <label>Priority</label>
+  <select id="f-pri" onchange="renderQueue()">
+    <option value="">All</option><option>High</option><option>Medium</option><option>Low</option>
+  </select>
+  <label>Action</label>
+  <select id="f-action" onchange="renderQueue()"><option value="">All</option></select>
+  <div class="spacer"></div>
+  <div id="queue-count" style="font-size:.82em;color:#9baabb"></div>
+</div>
+
+<!-- Queue -->
+<div class="section-hd" id="queue-hd" style="display:none">
+  <h2>🗂 Action Queue</h2>
+</div>
+<div id="queue"></div>
+
+<!-- Empty -->
+<div id="empty">
+  <div class="ico">📋</div>
+  <h3>Load your EAP data to get started</h3>
+  <p>Upload a CSV, click Load Sample Data, or paste an email above.</p>
+</div>
+
+<div class="footer">EAP Lifecycle Coordinator &nbsp;·&nbsp; No API keys &nbsp;·&nbsp; No server &nbsp;·&nbsp; All data stays in your browser</div>
+</div><!-- /container -->
+
+<script>
+// ══════════════════════════════════════════════════════════
+// DATA
+// ══════════════════════════════════════════════════════════
+let allActions = [];
+let rawRows    = [];
+
+const SAMPLE_CSV = `"EAP Name","Customer Name","Customer Contact","Customer Time Zone","AM Name","AM Email","SE Name","SE Email","PM Name","PM Email","Feature Requested","Current Stage","Customer Interest Status","Kickoff Scheduled Date","Kickoff Completed","Registration Completed","Onboarding Scheduled Date","Onboarding Completed","Build Shared","Build Downloaded / Installed","Product Actively Testing","Feedback Session Scheduled Date","Feedback Received","Jira Ticket Created","Jira Ticket ID","Jira Status","PM/Engineering Last Update Date","Customer Updated","Close-Out Email Sent","Survey Sent","Last Customer Touchpoint Date","Notes / Evidence"
+"DNS Security EAP","Acme Corporation","j.smith@acme.com","PST","Sarah Johnson","s.johnson@infoblox.com","Mark Chen","m.chen@infoblox.com","Lisa Park","l.park@infoblox.com","Advanced DNS Filtering","Active Testing","Agreed","2026-04-20","Yes","Yes","2026-04-27","Yes","Yes","Yes","Yes","","No","No","","","","No","No","No","2026-05-25","Customer confirmed active testing on 5/25. Reported minor DNS latency on custom RPZ policies - not blocking. Asked about bulk import for threat feeds."
+"DNS Security EAP","TechStart Inc","r.patel@techstart.io","EST","Sarah Johnson","s.johnson@infoblox.com","Amy Torres","a.torres@infoblox.com","Lisa Park","l.park@infoblox.com","Advanced DNS Filtering","Build Installation Follow-Up","Agreed","2026-04-18","Yes","Yes","2026-04-25","Yes","Yes","No","No","","No","No","","","","No","No","No","2026-05-20","Build package sent 5/5. No download confirmation. AM called 5/20 - no response. IT team may be the blocker."
+"DNS Security EAP","GlobalNet Systems","k.anderson@globalnet.com","CST","David Kim","d.kim@infoblox.com","Priya Singh","p.singh@infoblox.com","Lisa Park","l.park@infoblox.com","Advanced DNS Filtering","Feedback Collection","Agreed","2026-04-15","Yes","Yes","2026-04-22","Yes","Yes","Yes","Yes","2026-05-22","Yes","No","","","","No","No","No","2026-05-28","Feedback session 5/28. Customer reported DNS resolution delays with RPZ under heavy load. Requested bulk import for threat feeds. Strong case study candidate."
+"BloxOne Threat Defense EAP","DataSystems Corp","m.williams@datasystems.com","MST","Carlos Reyes","c.reyes@infoblox.com","Jin Park","j.park@infoblox.com","Tom Bradley","t.bradley@infoblox.com","Threat Intelligence Integration","Registration Follow-Up","Agreed","2026-05-10","Yes","No","","No","No","No","No","","No","No","","","","No","No","No","2026-05-29","Kickoff completed 5/10. Registration link sent but not completed. IT procurement approval may be causing delay."
+"BloxOne Threat Defense EAP","SecureBank Financial","a.chen@securebank.com","EST","Carlos Reyes","c.reyes@infoblox.com","Rebecca Moore","r.moore@infoblox.com","Tom Bradley","t.bradley@infoblox.com","SOC Integration APIs","Onboarding Scheduling","Agreed","","No","Yes","","No","No","No","No","","No","No","","","","No","No","No","2026-06-01","Registration completed 6/1. Customer ready for technical onboarding. Prefers morning EST slots."
+"BloxOne Threat Defense EAP","RetailCo Inc","s.brown@retailco.com","PST","Carlos Reyes","c.reyes@infoblox.com","Jin Park","j.park@infoblox.com","Tom Bradley","t.bradley@infoblox.com","","Recruitment","Potential","","No","No","","No","No","No","No","","No","No","","","","No","No","No","2026-05-15","AM flagged RetailCo as strong candidate from QBR. General interest in threat defense automation. No EAP outreach yet."
+"NIOS 9.0 Beta EAP","Manufacturing Inc","t.johnson@mfginc.com","CST","Linda Wu","l.wu@infoblox.com","Alex Rivera","a.rivera@infoblox.com","Raj Patel","r.patel@infoblox.com","NIOS Upgrade Automation","Recruitment","Potential","","No","No","","No","No","No","No","","No","No","","","","No","No","No","2026-05-30","SE flagged from discovery call. Customer on NIOS 8.5, interested in automation. AM/SE coordination needed before outreach."
+"NIOS 9.0 Beta EAP","TelecomGiant Corp","b.davis@telecomgiant.com","PST","Linda Wu","l.wu@infoblox.com","Alex Rivera","a.rivera@infoblox.com","Raj Patel","r.patel@infoblox.com","Grid Automation APIs","PM/Engineering Follow-Up","Agreed","2026-03-28","Yes","Yes","2026-04-05","Yes","Yes","Yes","Yes","2026-04-28","Yes","Yes","EAP-2847","In Progress","2026-05-07","No","No","No","2026-05-10","Jira EAP-2847 created for Grid Automation API improvements. PM last update 5/7 - 27 days ago. Customer asking for status via AM."
+"NIOS 9.0 Beta EAP","EnterpriseHQ Ltd","c.taylor@enterprisehq.com","GMT","Linda Wu","l.wu@infoblox.com","Maria Santos","m.santos@infoblox.com","Raj Patel","r.patel@infoblox.com","DDI Integration Framework","Close-Out","Agreed","2026-03-15","Yes","Yes","2026-03-22","Yes","Yes","Yes","Yes","2026-04-15","Yes","Yes","EAP-2791","Resolved","2026-05-01","Yes","No","No","2026-05-20","Full EAP cycle complete. Jira EAP-2791 resolved, customer updated 5/20. Close-out email and CSAT not yet sent. Strong case study potential."
+"NIOS 9.0 Beta EAP","StartupTech Solutions","p.nguyen@startuptech.io","PST","Linda Wu","l.wu@infoblox.com","Maria Santos","m.santos@infoblox.com","Raj Patel","r.patel@infoblox.com","Cloud-Native DDI","Customer Update","Agreed","2026-04-01","Yes","Yes","2026-04-10","Yes","Yes","Yes","Yes","2026-05-05","Yes","Yes","EAP-2831","Resolved","2026-05-25","No","No","No","2026-05-10","Jira EAP-2831 resolved 5/25. Engineering added IPv6 support and improved API rate limits. Customer not yet notified."
+"Cloud Services EAP","MidwestHealth Systems","e.garcia@midwesthealth.org","CST","James Wilson","j.wilson@infoblox.com","Chris Lee","c.lee@infoblox.com","Jennifer Cho","j.cho@infoblox.com","Cloud DNS Automation","Kickoff Scheduling","Agreed","","No","No","","No","No","No","No","","No","No","","","","No","No","No","2026-06-02","Customer confirmed participation 6/2. Prefers afternoon CST. IT stakeholder will also join."
+"Cloud Services EAP","Pacific Retail Group","n.park@pacificretail.com","PST","James Wilson","j.wilson@infoblox.com","Chris Lee","c.lee@infoblox.com","Jennifer Cho","j.cho@infoblox.com","Hybrid Cloud DNS Management","Recruitment","Potential","","No","No","","No","No","No","No","","No","No","","","","No","No","No","2026-06-01","SE identified from discovery call 6/1. Interested in hybrid DNS across on-prem and cloud. AM outreach not yet sent."`;
+
+// ══════════════════════════════════════════════════════════
+// CSV PARSER
+// ══════════════════════════════════════════════════════════
+function parseCSV(text) {
+  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const rows = [];
+  let cur = '', inQ = false;
+  const fields = [];
+  const pushField = () => { fields.push(cur.trim()); cur = ''; };
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"') { inQ = !inQ; continue; }
+    if (c === ',' && !inQ) { pushField(); continue; }
+    if (c === '\n' && !inQ) { pushField(); rows.push([...fields]); fields.length = 0; continue; }
+    cur += c;
+  }
+  pushField();
+  if (fields.some(f => f)) rows.push([...fields]);
+
+  if (rows.length < 2) return [];
+  const headers = rows[0];
+  return rows.slice(1).filter(r => r.some(v => v)).map(r => {
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = (r[i] || '').trim(); });
+    return obj;
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+// UTILITIES
+// ══════════════════════════════════════════════════════════
+const g = (row, key) => (row[key] || '').trim();
+const isY = (row, key) => ['yes','true','1','y'].includes(g(row,key).toLowerCase());
+const hasV = (row, key) => g(row,key) !== '';
+
+function daysSince(row, key) {
+  const v = g(row, key);
+  if (!v) return 9999;
+  const d = new Date(v);
+  if (isNaN(d)) return 9999;
+  return Math.max(0, Math.floor((Date.now() - d) / 86400000));
+}
+
+function fName(full) {
+  if (!full || full === '—') return 'there';
+  return full.trim().split(' ')[0];
+}
+
+function contactFName(s) {
+  if (!s) return 'there';
+  if (s.includes('@')) {
+    const local = s.split('@')[0].replace(/[._-]/g,' ').trim().split(' ');
+    return local[0] ? local[0][0].toUpperCase() + local[0].slice(1) : 'there';
+  }
+  return fName(s);
+}
+
+function sig(amName, amEmail) {
+  return `\nBest regards,\n${amName || '[Your Name]'}\n${amEmail && amEmail !== '—' ? amEmail + '\n' : ''}Infoblox`;
+}
+
+// ══════════════════════════════════════════════════════════
+// EMAIL GENERATORS
+// ══════════════════════════════════════════════════════════
+function genEmail(type, row) {
+  const eap=g(row,'EAP Name'), cust=g(row,'Customer Name'), contact=g(row,'Customer Contact');
+  const am=g(row,'AM Name'), ame=g(row,'AM Email'), se=g(row,'SE Name'), see=g(row,'SE Email');
+  const pm=g(row,'PM Name'), pme=g(row,'PM Email'), feat=g(row,'Feature Requested');
+  const tz=g(row,'Customer Time Zone')||'your time zone', notes=g(row,'Notes / Evidence');
+  const fn=contactFName(contact), fnam=fName(am), fse=fName(se), fpm=fName(pm);
+  const jira=g(row,'Jira Ticket ID'), jst=g(row,'Jira Status');
+
+  switch(type) {
+    case 'direct_recruitment': return `Subject: Exclusive Invitation — ${eap} Early Access Program
+
+Hi ${fn},
+
+I hope you're doing well. I'm reaching out because we're launching the ${eap} and believe ${cust} would be an outstanding early access partner.
+
+Based on your team's Infoblox footprint and strategic goals, this program is built for organizations like yours — those who want to influence what ships before general availability.
+
+What you get as an EAP participant:
+• Early access to ${feat||'new capabilities'} in a pre-GA environment
+• Direct input into the product roadmap through structured feedback sessions
+• Dedicated support from our Product and Solutions Engineering teams
+• Recognition as a Design Partner upon program completion
+
+What we ask of you:
+• A 30-minute kickoff call to align on goals and timeline
+• 4–6 weeks of testing in your environment
+• One structured feedback session with our product team
+
+I'd love to schedule a quick 20-minute overview call this week. Would morning or afternoon work best for you (${tz})?
+
+Looking forward to the conversation.${sig(am,ame)}`;
+
+    case 'am_se_outreach': return `Subject: [EAP Candidate] ${cust} — ${eap} — Your Input Needed
+
+Hi ${fse},
+
+I wanted to flag ${cust} as a strong candidate for the ${eap} and loop you in before we send formal outreach.
+
+Customer: ${cust}
+Primary Contact: ${contact}
+Feature Interest: ${feat||'TBD'}
+Background: ${notes||'See CRM notes.'}
+
+Before I send the recruitment email, I'd like your input on:
+1. Technical fit — does ${cust}'s environment align with what this EAP requires?
+2. Outreach approach — any nuances to factor in given your relationship?
+3. Availability — can you join the kickoff call once they agree?
+
+Once you've reviewed, I'll handle the initial customer outreach and coordinate the kickoff.
+
+Can you reply or ping me on Slack with your take?${sig(am,ame)}`;
+
+    case 'kickoff_scheduling': return `Subject: Kickoff Call — ${eap} — Let's Get Scheduled
+
+Hi ${fn},
+
+Thank you for agreeing to participate in the ${eap}! We're excited to have ${cust} as an early access partner.
+
+The next step is a 30-minute kickoff call to:
+• Review the EAP objectives and timeline
+• Preview the ${feat||'featured capabilities'} you'll be testing
+• Introduce ${se} (${see}), your dedicated Solutions Engineer
+• Set mutual expectations for the testing phase
+
+Please share your availability for the coming week and I'll send a calendar invite immediately. We're happy to work around your schedule (${tz}).
+
+A few slots that work for us:
+• [Option A — e.g., Mon, 10:00 AM ${tz}]
+• [Option B — e.g., Wed, 2:00 PM ${tz}]
+• [Option C — e.g., Fri, 11:00 AM ${tz}]
+
+Just reply with what works, or suggest alternatives.${sig(am,ame)}`;
+
+    case 'registration_followup': return `Subject: Quick Follow-Up: EAP Registration — ${eap}
+
+Hi ${fn},
+
+Hope the kickoff call got you excited about the ${eap}! I wanted to follow up on one housekeeping item before we move to the technical phase.
+
+We haven't received a completed EAP registration from your side yet. This typically includes:
+• Signing the EAP participation agreement / NDA
+• Completing portal access setup
+• Submitting the brief onboarding intake form
+
+This is required before we can schedule your technical onboarding and usually takes about 5–10 minutes.
+
+👉 [Registration Link — insert here]
+
+If you've hit a snag — procurement approval delays, access issues, or need a different signatory — please let me know and I'll help clear the path right away.
+
+Is there anything I can do to help move this forward?${sig(am,ame)}`;
+
+    case 'onboarding_scheduling': return `Subject: Next Step: Technical Onboarding — ${eap}
+
+Hi ${fn},
+
+Your EAP registration is confirmed — great news! You're ready to move into the technical onboarding phase of the ${eap}.
+
+${se} (${see}), your dedicated Solutions Engineer, will lead a 60-minute technical onboarding session that covers:
+• Environment prerequisites and compatibility review
+• Step-by-step deployment walkthrough for ${feat||'the EAP feature'}
+• Configuration best practices tailored to your environment
+• Defining success criteria and test scenarios for your evaluation
+
+To schedule, please share 2–3 availability windows in the coming week (${tz}), and ${fse} will send a confirmed calendar invite with join details and a pre-read.
+
+We recommend having your infrastructure or network team available for this session.${sig(am,ame)}`;
+
+    case 'build_sharing': return `Subject: ${eap} Build Access — Download Instructions Inside
+
+Hi ${fn},
+
+Following your successful onboarding session, we're ready to share access to the ${eap} build for ${feat||'the EAP feature'}.
+
+Access Details:
+• EAP Portal: [Insert portal URL]
+• Credentials: [Insert or confirm existing login]
+• Build Version: [e.g., v9.0-EAP-build-4]
+• Release Notes: [Insert link]
+• Installation Guide: [Insert link]
+
+Pre-Installation Checklist:
+☐ Test environment meets prerequisites from your onboarding session
+☐ Rollback plan in place (snapshot or backup recommended)
+☐ Primary technical contact identified for the testing phase
+
+${se} (${see}) is your go-to for any technical questions. ${fse} is familiar with your environment from the onboarding session and will prioritize your requests.
+
+Please confirm once you've successfully downloaded the build.${sig(am,ame)}`;
+
+    case 'build_followup': return `Subject: Checking In — ${eap} Build Download
+
+Hi ${fn},
+
+I wanted to check in on your progress with the ${eap} build for ${feat||'the EAP feature'}. We shared download instructions a little while back and want to make sure everything went smoothly.
+
+Quick status check:
+☐ Downloaded the EAP build?
+☐ Installed in your test environment?
+☐ Initial smoke test completed?
+
+If you've run into any issues — download errors, compatibility problems, or access questions — ${se} (${see}) is ready to help. ${fse} can jump on a quick call or troubleshoot async, whichever you prefer.${notes ? '\n\nFor reference from our last touchpoint: ' + notes : ''}
+
+If priorities have shifted on your end, no problem — just let us know and we'll adjust accordingly.${sig(am,ame)}`;
+
+    case 'active_testing': return `Subject: EAP Testing Check-In — How's ${feat||'It'} Going?
+
+Hi ${fn},
+
+Hope the ${feat||'EAP build'} is up and running in your environment! I wanted to check in on how the testing phase is going and make sure you have what you need.
+
+A few quick questions:
+1. Are you actively testing ${feat||'the EAP feature'} in your environment?
+2. Any blockers we can help clear — technical issues, resource constraints, open questions?
+3. Any early observations or impressions worth capturing before the formal feedback session?
+
+${se} (${see}) is on standby for any technical deep-dives. ${fse} can schedule a working session if you'd find that helpful.
+
+We'll be reaching out soon to schedule your structured feedback session with our product team — observations you're collecting now will make that conversation much richer.${sig(am,ame)}`;
+
+    case 'feedback_scheduling': return `Subject: Let's Schedule Your Feedback Session — ${eap}
+
+Hi ${fn},
+
+You've reached one of the most impactful milestones in the ${eap} — your structured feedback session with our Product team!
+
+This is your direct line to influence the roadmap for ${feat||'the EAP feature'}. ${pm} (${pme}), our Product Manager, will join along with ${se} and me to make sure every piece of feedback is captured accurately and routed to engineering with full context.
+
+What we'll cover (60 minutes):
+• Overall experience with ${feat||'the feature'} — what's working well
+• Pain points, gaps, or unexpected behaviors observed
+• Feature requests and enhancement ideas
+• Use-case scenarios we may not have considered
+• Open Q&A with the product team
+
+Please share 2–3 availability windows in the next 1–2 weeks (${tz}), and we'll confirm immediately.
+
+Your feedback genuinely shapes what ships.${sig(am,ame)}`;
+
+    case 'jira_creation_pm': return `Subject: [EAP Action] Jira Ticket Needed — Feedback from ${cust} (${eap})
+
+Hi ${fpm},
+
+We've completed the feedback session with ${cust} as part of the ${eap} and I'm sending over the summary for Jira ticket creation.
+
+Customer: ${cust}
+EAP Program: ${eap}
+Feature Area: ${feat||'—'}
+Feedback Summary: ${notes||'See attached notes.'}
+
+I've included a Jira draft below. Please:
+1. Review and fill in any bracketed fields with engineering detail
+2. Create the ticket(s) and share the ID(s) with me
+3. Provide your initial read on priority and feasibility
+4. Flag any open questions for the customer
+
+${se} can provide supplemental technical detail if needed. The customer is engaged and expecting follow-up once a ticket is created.${sig(am,ame)}`;
+
+    case 'pm_followup': return `Subject: [EAP Follow-Up] Status on ${jira||'Jira Ticket'} — ${cust} Requesting Update
+
+Hi ${fpm},
+
+I wanted to follow up on ${jira||'the open Jira ticket'} (${jst||'In Progress'}) related to our ${eap} participant ${cust}.
+
+The customer is actively asking for a status update via our AM relationship, and I want to keep them in the loop proactively before it becomes a concern.
+
+Could you share:
+1. Current status and any engineering progress made
+2. Expected timeline for the next milestone or resolution
+3. Any blockers, dependencies, or open questions for the customer
+4. Whether there's anything I or the SE can provide to support
+
+Once I have an update, I'll draft a customer-facing communication. Happy to schedule a quick sync if that's easier than email.${sig(am,ame)}`;
+
+    case 'customer_update': return `Subject: Update on Your Feedback — ${eap}
+
+Hi ${fn},
+
+I have a positive update to share regarding the feedback you provided during the ${eap}.
+
+Jira Ticket ${jira||''} — Status: ${jst||'Resolved'}
+
+Our engineering team has made progress on the items you raised, particularly around ${feat||'the features you tested'}. Here's what I can share:
+
+• [Summary of what was resolved or improved — customize from Jira resolution notes]
+• [Specific enhancements or fixes incorporated based on your feedback]
+• [GA availability timeline, if applicable]
+
+Your participation directly contributed to this outcome. The feedback you provided gave our product team the clarity and real-world context they needed.
+
+We'll be wrapping up the formal EAP phase shortly and reaching out to complete the close-out process.
+
+Thank you again for your partnership.${sig(am,ame)}`;
+
+    case 'closeout': return `Subject: Thank You — ${eap} Program Close-Out + Quick Survey
+
+Hi ${fn},
+
+On behalf of the entire Infoblox team, I want to sincerely thank you and the ${cust} team for your participation in the ${eap}.
+
+From the kickoff call through active testing and your detailed feedback session — your engagement was exactly the kind of committed partnership that drives better products. The insights you shared around ${feat||'the features you tested'} will have a lasting impact on what we ship.
+
+What happens from here:
+• Your feedback is formally logged and has been routed to Product and Engineering
+• Open Jira items will continue to be tracked and you'll receive updates as they progress
+• You'll have early visibility when ${feat||'the feature'} reaches general availability
+
+We'd love your candid feedback on the EAP experience:
+👉 [CSAT Survey — Insert Link Here] (5 minutes)
+
+Also: if ${cust} would be open to sharing your experience in a joint case study or customer reference, I'd love to explore that with you.
+
+Thank you again. It's been a genuine pleasure working with you.${sig(am,ame)}`;
+
+    default: return '';
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// JIRA DRAFT
+// ══════════════════════════════════════════════════════════
+function genJira(row) {
+  const eap=g(row,'EAP Name'), cust=g(row,'Customer Name'), contact=g(row,'Customer Contact');
+  const am=g(row,'AM Name'), se=g(row,'SE Name'), pm=g(row,'PM Name');
+  const feat=g(row,'Feature Requested'), notes=g(row,'Notes / Evidence');
+  const fbDate=g(row,'Feedback Session Scheduled Date')||'[date of feedback session]';
+  return `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+JIRA TICKET DRAFT — ${eap} | ${cust}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ISSUE TYPE:  [ ] Bug  [ ] Enhancement  [ ] Feature Request  [ ] UX Issue
+PROJECT:     [Insert project key — e.g., BLOX, NIOS, DNS]
+PRIORITY:    [ ] Critical  [ ] High  [x] Medium  [ ] Low   ← adjust with PM
+LABELS:      EAP, ${eap.replace(/ /g,'-')}, Customer-Feedback, ${cust.replace(/ /g,'-')}
+COMPONENTS:  ${feat||'[Feature area]'}
+REPORTER:    ${am}
+ASSIGNEE:    [Assign after PM triage]
+
+──────────────────────────────────────────────
+SUMMARY:
+[EAP – ${feat}] Customer Feedback from ${cust}: [brief one-line issue description]
+
+──────────────────────────────────────────────
+DESCRIPTION:
+
+## Problem Statement
+[Summarize the core issue or gap in 2–3 sentences.]
+
+Raw EAP Notes:
+  ${notes||'[No notes recorded]'}
+
+## Customer Impact
+Customer:      ${cust}
+Contact:       ${contact}
+EAP Program:   ${eap}
+Feedback Date: ${fbDate}
+Feature Area:  ${feat}
+
+[Describe operational/business impact. How many users/environments affected?]
+
+## Expected Behavior
+[What did the customer expect the product to do?]
+
+## Actual Behavior
+[What does the product currently do instead?]
+
+## Steps to Reproduce (if applicable)
+1. [Step 1]
+2. [Step 2]
+3. [Step 3]
+
+## Supporting Evidence
+- EAP Program: ${eap}
+- Customer: ${cust} | Contact: ${contact}
+- Account Manager: ${am}
+- Solutions Engineer: ${se}
+- Product Manager: ${pm}
+- Raw Notes: ${notes}
+
+## Priority Justification
+[Why this priority? Reference customer tier, frequency, blocking status, competitive risk.]
+
+## Open Questions for PM / Engineering
+1. Is this within scope of the current release cycle?
+2. What is the estimated level of engineering effort?
+3. Are there workarounds we can share with the customer in the interim?
+4. What additional information or logs are needed from the customer?
+5. Should this link to an existing epic or roadmap initiative?
+6. Are other customers likely affected by the same issue?
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Complete all bracketed fields before creating the ticket.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+}
+
+// ══════════════════════════════════════════════════════════
+// RULE ENGINE
+// ══════════════════════════════════════════════════════════
+function evaluate(row) {
+  const eap=g(row,'EAP Name'), cust=g(row,'Customer Name');
+  const contact=g(row,'Customer Contact'), am=g(row,'AM Name'), se=g(row,'SE Name'), pm=g(row,'PM Name');
+  const tz=g(row,'Customer Time Zone'), feat=g(row,'Feature Requested'), notes=g(row,'Notes / Evidence');
+  const interest=g(row,'Customer Interest Status').toLowerCase();
+  const jiraId=g(row,'Jira Ticket ID'), jiraSt=g(row,'Jira Status').toLowerCase();
+  const dst=daysSince(row,'Last Customer Touchpoint Date');
+  const dsPm=daysSince(row,'PM/Engineering Last Update Date');
+  const stage=g(row,'Current Stage');
+
+  const kickDone   = isY(row,'Kickoff Completed');
+  const regDone    = isY(row,'Registration Completed');
+  const onbDone    = isY(row,'Onboarding Completed');
+  const bldShared  = isY(row,'Build Shared');
+  const bldInstall = isY(row,'Build Downloaded / Installed');
+  const testing    = isY(row,'Product Actively Testing');
+  const fbRecv     = isY(row,'Feedback Received');
+  const jiraCreated= isY(row,'Jira Ticket Created');
+  const custUpd    = isY(row,'Customer Updated');
+  const closeSent  = isY(row,'Close-Out Email Sent');
+  const survSent   = isY(row,'Survey Sent');
+  const kickSched  = hasV(row,'Kickoff Scheduled Date');
+  const onbSched   = hasV(row,'Onboarding Scheduled Date');
+  const fbSched    = hasV(row,'Feedback Session Scheduled Date');
+
+  const mk = (priority,missing,action,atype,stakeholder,owner,emailType,hasJira=false) => ({
+    priority, eap, cust, contact, stage, missing, action, atype, stakeholder, owner,
+    am, se, pm, tz, feat, notes, dst: dst<9000?dst:null,
+    emailDraft: emailType ? genEmail(emailType,row) : '',
+    jiraDraft: hasJira ? genJira(row) : '',
+  });
+
+  if (['dropped','declined','not interested','churned'].includes(interest))
+    return mk('Low','Customer Exited EAP','No action — customer exited','no_action','—','—',null);
+
+  if (closeSent && survSent)
+    return mk('Low','None — Completed','EAP complete, no action needed','complete','—','—',null);
+
+  if (custUpd && (!closeSent || !survSent))
+    return mk(dst>10?'High':'Medium','Close-Out + CSAT Survey Not Sent',
+      'Send close-out email and CSAT survey','closeout',contact,am,'closeout');
+
+  if (jiraCreated && ['resolved','done','closed','complete','released'].includes(jiraSt) && !custUpd)
+    return mk('High','Customer Not Notified of Jira Resolution',
+      'Send customer update — Jira has been resolved','customer_update',contact,pm||am,'customer_update');
+
+  if (jiraCreated && jiraId && dsPm>14)
+    return mk(dsPm>21?'High':'Medium',`No PM Update in ${dsPm} Days`,
+      `Follow up with PM/Engineering on ${jiraId}`,'pm_followup',g(row,'PM Email')||pm,pm,'pm_followup');
+
+  if (fbRecv && !jiraCreated)
+    return mk('High','Jira Ticket Not Created from Feedback',
+      'Create Jira ticket from customer feedback','jira_creation',g(row,'PM Email')||pm,pm,'jira_creation_pm',true);
+
+  if (testing && !fbRecv && !fbSched)
+    return mk(dst>7?'High':'Medium','Feedback Session Not Scheduled',
+      'Schedule structured feedback session','feedback_scheduling',contact,se||am,'feedback_scheduling');
+
+  if (bldInstall && !testing)
+    return mk(dst>10?'High':'Medium','Active Testing Not Confirmed',
+      'Confirm customer is actively testing','active_testing',contact,se||am,'active_testing');
+
+  if (bldShared && !bldInstall)
+    return mk(dst>10?'High':'Medium','Build Not Downloaded / Installed',
+      'Follow up on build download/installation','build_followup',contact,se||am,'build_followup');
+
+  if (onbDone && !bldShared)
+    return mk('High','Build Not Shared with Customer',
+      'Share EAP build and download instructions','build_sharing',contact,se,'build_sharing');
+
+  if (regDone && !onbDone && !onbSched)
+    return mk(dst>7?'High':'Medium','Onboarding Not Scheduled',
+      'Schedule technical onboarding session','onboarding_scheduling',contact,se,'onboarding_scheduling');
+
+  if (kickDone && !regDone)
+    return mk(dst>7?'High':'Medium','Registration Not Completed',
+      'Follow up on EAP registration','registration_followup',contact,am,'registration_followup');
+
+  if (['agreed','confirmed','yes','active'].includes(interest) && !kickDone && !kickSched)
+    return mk(dst>7?'High':'Medium','Kickoff Not Scheduled',
+      'Schedule EAP kickoff call','kickoff_scheduling',contact,am,'kickoff_scheduling');
+
+  if (['potential',''].includes(interest) && feat)
+    return mk(dst>14?'High':dst<=3?'Low':'Medium','AM/SE Coordination Not Done',
+      'Coordinate with AM/SE and initiate EAP outreach','am_se_outreach',g(row,'AM Email')||am,am,'am_se_outreach');
+
+  if (['potential',''].includes(interest))
+    return mk('Medium','Customer Outreach Not Sent',
+      'Send direct EAP recruitment email','direct_recruitment',contact,am,'direct_recruitment');
+
+  return mk('Low','Review Required','Review customer record manually','review',am,am,null);
+}
+
+// ══════════════════════════════════════════════════════════
+// TEXT SIGNAL ANALYSIS (no AI needed)
+// ══════════════════════════════════════════════════════════
+const SIGNALS = [
+  {re:/instal+ed.*(build|software|package)|build.*instal+ed|got.*(build|it).*(up|running|working)/i, label:'Build Installed', field:'Build Downloaded / Installed', value:'Yes', next:'Confirm active testing → schedule feedback session if not done.'},
+  {re:/active(ly)? test|been test|running tests|testing.*(environment|staging|prod)/i, label:'Actively Testing', field:'Product Actively Testing', value:'Yes', next:'Schedule feedback session with PM.'},
+  {re:/share.*(feedback|thoughts|input)|love to.*(provide|give).*(feedback|input)|ready to.*(talk|debrief|discuss)/i, label:'Feedback Ready', field:'Feedback Received (pending)', value:'Pending', next:'Schedule feedback session immediately — HIGH priority.'},
+  {re:/any.*(update|news|progress).*(ticket|jira|issue)|ticket.*(update|status)|follow.{0,5}up.*(jira|ticket)/i, label:'Customer Asking for Jira Update', field:null, value:null, next:'PM/Engineering follow-up URGENT — customer is asking.'},
+  {re:/issue|problem|error|not work|broken|bug|fail/i, label:'Technical Issue Reported', field:null, value:null, next:'Flag SE for support, draft troubleshooting response.'},
+  {re:/not.*(going|able|participat|continu|interested)|drop|opt.?out|can.?t participat|step.?down/i, label:'Customer May Be Dropping', field:'Customer Interest Status', value:'Dropped', next:'Update status to Dropped, flag AM immediately.'},
+  {re:/kickoff.*(done|complete|finished|went well)|had.*(kickoff|kick-off)/i, label:'Kickoff Completed', field:'Kickoff Completed', value:'Yes', next:'Follow up on registration link.'},
+  {re:/onboard.*(done|complete|finished|great|went well)|completed.*onboard/i, label:'Onboarding Completed', field:'Onboarding Completed', value:'Yes', next:'Share build/download instructions.'},
+  {re:/download.*(build|package|file)|got.*(build|package)|received.*(build|file)/i, label:'Build Downloaded', field:'Build Downloaded / Installed', value:'Yes', next:'Check if installed and actively testing.'},
+  {re:/registr.*(done|complete|submit|finished)|signed.*(nda|agreement)|portal.*(access|set.?up)/i, label:'Registration Complete', field:'Registration Completed', value:'Yes', next:'Schedule technical onboarding session.'},
+];
+
+function analyzeText() {
+  const text = document.getElementById('paste-in').value.trim();
+  const out  = document.getElementById('signal-out');
+  if (!text) { out.style.display='none'; return; }
+
+  const found = SIGNALS.filter(s => s.re.test(text));
+
+  // Try to match a customer name from loaded data
+  const matched = [];
+  if (rawRows.length) {
+    rawRows.forEach(row => {
+      const cn = g(row,'Customer Name');
+      if (cn && text.toLowerCase().includes(cn.toLowerCase().split(' ')[0].toLowerCase())) {
+        matched.push(cn + ' (' + g(row,'EAP Name') + ')');
+      }
+    });
+  }
+
+  let html = '';
+  if (matched.length) {
+    html += `🏢 Possible customer match: ${[...new Set(matched)].join(', ')}\n\n`;
+  }
+  if (found.length) {
+    html += `📡 Signals detected:\n`;
+    found.forEach(s => {
+      html += `\n• ${s.label}`;
+      if (s.field) html += `\n  → Update: "${s.field}" = "${s.value}"`;
+      html += `\n  → Next action: ${s.next}`;
+    });
+  } else {
+    html += '• No strong EAP lifecycle signals detected.\n  Review manually or add more context.';
+  }
+
+  out.style.display = 'block';
+  out.textContent = html;
+}
+
+// ══════════════════════════════════════════════════════════
+// PROCESS & RENDER
+// ══════════════════════════════════════════════════════════
+function processRows(rows) {
+  rawRows = rows;
+  allActions = rows.map(evaluate);
+  allActions.sort((a,b) => {
+    const po = {High:0,Medium:1,Low:2};
+    const pd = (po[a.priority]||2) - (po[b.priority]||2);
+    if (pd !== 0) return pd;
+    return (b.dst||0) - (a.dst||0);
+  });
+  populateFilters();
+  renderMetrics();
+  renderQueue();
+  document.getElementById('empty').style.display = 'none';
+  document.getElementById('metrics').style.display = 'grid';
+  document.getElementById('filter-bar').style.display = 'flex';
+  document.getElementById('queue-hd').style.display = 'flex';
+  document.getElementById('export-csv-btn').style.display = '';
+  document.getElementById('export-drafts-btn').style.display = '';
+}
+
+function populateFilters() {
+  const eaps = [...new Set(allActions.map(a=>a.eap))].sort();
+  const acts = [...new Set(allActions.map(a=>a.action))].sort();
+  const fe = document.getElementById('f-eap');
+  fe.innerHTML = '<option value="">All EAPs</option>' + eaps.map(e=>`<option>${e}</option>`).join('');
+  const fa = document.getElementById('f-action');
+  fa.innerHTML = '<option value="">All Actions</option>' + acts.map(a=>`<option>${a}</option>`).join('');
+}
+
+function renderMetrics() {
+  const counts = {High:0,Medium:0,Low:0};
+  allActions.forEach(a => { if(counts[a.priority]!==undefined) counts[a.priority]++; });
+  document.getElementById('m-total').textContent = allActions.length;
+  document.getElementById('m-high').textContent  = counts.High;
+  document.getElementById('m-med').textContent   = counts.Medium;
+  document.getElementById('m-low').textContent   = counts.Low;
+}
+
+function renderQueue() {
+  const fEap = document.getElementById('f-eap').value;
+  const fPri = document.getElementById('f-pri').value;
+  const fAct = document.getElementById('f-action').value;
+
+  const filtered = allActions.filter(a =>
+    (!fEap || a.eap === fEap) &&
+    (!fPri || a.priority === fPri) &&
+    (!fAct || a.action === fAct)
+  );
+
+  document.getElementById('queue-count').textContent = `${filtered.length} action${filtered.length!==1?'s':''} shown`;
+
+  const q = document.getElementById('queue');
+  if (filtered.length === 0) {
+    q.innerHTML = '<div style="text-align:center;padding:40px;color:#9baabb">No actions match the current filters.</div>';
+    return;
+  }
+
+  q.innerHTML = filtered.map((a,i) => buildCard(a,i)).join('');
+}
+
+function bdg(p) {
+  const cls={High:'b-high',Medium:'b-med',Low:'b-low'}[p]||'b-low';
+  return `<span class="badge ${cls}">${p.toUpperCase()}</span>`;
+}
+
+let _uid = 0;
+function buildCard(a, i) {
+  const id = 'c' + (_uid++);
+  const stripeClass = {High:'stripe-high',Medium:'stripe-medium',Low:'stripe-low'}[a.priority]||'';
+  const isComplete = ['complete','no_action'].includes(a.atype);
+
+  const twHtml = a.dst !== null ? (() => {
+    const cls = a.dst>14?'tw-red':a.dst>7?'tw-amber':'tw-green';
+    const ico = a.dst>14?'🔴':a.dst>7?'🟡':'🟢';
+    return `<div class="touch-line"><span class="${cls}">${ico} Last touchpoint: ${a.dst} day${a.dst!==1?'s':''} ago</span></div>`;
+  })() : '';
+
+  const evidenceTab = `
+    <div class="pane on" id="${id}-ev">
+      ${a.notes && a.notes!=='—' ? `<div style="background:#f0f6ff;border-left:4px solid #1565c0;border-radius:6px;padding:10px 14px;font-size:.86em;margin-bottom:10px">${a.notes}</div>` : '<p style="color:#9baabb;font-size:.86em">No notes recorded.</p>'}
+      <div style="background:${isComplete?'#e8f5e9':'#fff8e1'};border-radius:6px;padding:10px 14px;font-size:.86em;font-weight:600;color:${isComplete?'#1b5e20':'#7a4100'}">
+        ${isComplete ? '✅' : '⚡'} ${a.action}
+      </div>
+    </div>`;
+
+  const emailTab = a.emailDraft ? `
+    <div class="pane" id="${id}-em">
+      <p class="draft-note">✏️ Review, personalize bracketed fields, then copy and send.</p>
+      <textarea class="draft email" id="${id}-etxt" rows="14">${a.emailDraft}</textarea>
+      <div class="copy-row">
+        <button class="btn btn-primary btn-sm" onclick="copyText('${id}-etxt',this)">📋 Copy Email</button>
+        <span style="font-size:.78em;color:#9baabb;align-self:center">To: ${a.stakeholder||'—'}</span>
+      </div>
+    </div>` : `<div class="pane" id="${id}-em"><p style="color:#9baabb;font-size:.86em;padding:10px 0">No draft email for this action type.</p></div>`;
+
+  const jiraTab = a.jiraDraft ? `
+    <div class="pane" id="${id}-ji">
+      <p class="draft-note">✏️ Complete all bracketed fields before creating the Jira ticket.</p>
+      <textarea class="draft jira" id="${id}-jtxt" rows="22">${a.jiraDraft}</textarea>
+      <div class="copy-row">
+        <button class="btn btn-primary btn-sm" onclick="copyText('${id}-jtxt',this)">📋 Copy Jira Draft</button>
+      </div>
+    </div>` : '';
+
+  const tabs = [
+    `<button class="tab on" onclick="switchTab('${id}','ev',this)">📋 Evidence</button>`,
+    `<button class="tab" onclick="switchTab('${id}','em',this)">✉️ Draft Email</button>`,
+    ...(a.jiraDraft ? [`<button class="tab" onclick="switchTab('${id}','ji',this)">🎫 Jira Draft</button>`] : []),
+  ].join('');
+
+  return `
+<div class="action-card ${stripeClass}">
+  <div class="card-hd" id="${id}-hd" onclick="toggleCard('${id}')" ${isComplete?'':''}>
+    ${bdg(a.priority)}
+    <strong>${a.cust}</strong>
+    <span style="color:#90a4ae;font-size:.88em"> · ${a.eap}</span>
+    <span style="color:#546;font-size:.85em;margin-left:4px"> — ${a.action}</span>
+    <span class="chev">▼</span>
+  </div>
+  <div class="card-bd" id="${id}-bd">
+    <div class="info-grid">
+      <div class="ig"><div class="lbl">Current Stage</div><div class="val">${a.stage||'—'}</div></div>
+      <div class="ig"><div class="lbl">Missing Step</div><div class="val">${a.missing}</div></div>
+      <div class="ig"><div class="lbl">Stakeholder</div><div class="val">${a.stakeholder||'—'}</div></div>
+      <div class="ig"><div class="lbl">Suggested Owner</div><div class="val">${a.owner||'—'}</div></div>
+    </div>
+    ${twHtml}
+    <div class="team-str">AM: ${a.am||'—'} &nbsp;·&nbsp; SE: ${a.se||'—'} &nbsp;·&nbsp; PM: ${a.pm||'—'} &nbsp;·&nbsp; Contact: ${a.contact||'—'}</div>
+    <hr class="divider">
+    <div class="tabs">${tabs}</div>
+    ${evidenceTab}${emailTab}${jiraTab}
+  </div>
+</div>`;
+}
+
+function toggleCard(id) {
+  const hd = document.getElementById(id+'-hd');
+  const bd = document.getElementById(id+'-bd');
+  hd.classList.toggle('open');
+  bd.classList.toggle('open');
+}
+
+function switchTab(id, pane, btn) {
+  const card = document.getElementById(id+'-bd');
+  card.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
+  card.querySelectorAll('.pane').forEach(p => p.classList.remove('on'));
+  btn.classList.add('on');
+  const target = document.getElementById(id+'-'+pane);
+  if (target) target.classList.add('on');
+}
+
+function copyText(elId, btn) {
+  const el = document.getElementById(elId);
+  el.select();
+  document.execCommand('copy');
+  const orig = btn.textContent;
+  btn.textContent = '✅ Copied!';
+  setTimeout(() => btn.textContent = orig, 2000);
+}
+
+// ══════════════════════════════════════════════════════════
+// EXPORTS
+// ══════════════════════════════════════════════════════════
+function exportCSV() {
+  const cols = ['Priority','EAP Name','Customer Name','Current Stage','Missing Step','Recommended Action','Stakeholder to Contact','Suggested Owner','Days Since Touchpoint','Evidence'];
+  const rows = [cols];
+  allActions.forEach(a => {
+    rows.push([a.priority,a.eap,a.cust,a.stage,a.missing,a.action,a.stakeholder,a.owner,a.dst!==null?a.dst:'N/A',a.notes].map(v=>`"${(v||'').replace(/"/g,'""')}"`));
+  });
+  download('eap_action_queue.csv', rows.map(r=>r.join(',')).join('\n'), 'text/csv');
+}
+
+function exportDrafts() {
+  const lines = [`# EAP Drafts Export\nGenerated: ${new Date().toLocaleString()}\n\n---\n`];
+  allActions.filter(a=>!['complete','no_action'].includes(a.atype)).forEach(a => {
+    lines.push(`## [${a.priority}] ${a.cust} · ${a.eap}\n**Action:** ${a.action}  \n**Stage:** ${a.stage} → ${a.missing}\n`);
+    if (a.notes) lines.push(`**Evidence:** ${a.notes}\n`);
+    if (a.emailDraft) lines.push(`### Draft Email\n\`\`\`\n${a.emailDraft}\n\`\`\`\n`);
+    if (a.jiraDraft) lines.push(`### Jira Draft\n\`\`\`\n${a.jiraDraft}\n\`\`\`\n`);
+    lines.push('---\n');
+  });
+  download('eap_drafts.md', lines.join('\n'), 'text/markdown');
+}
+
+function downloadTemplate() {
+  const headers = ["EAP Name","Customer Name","Customer Contact","Customer Time Zone","AM Name","AM Email","SE Name","SE Email","PM Name","PM Email","Feature Requested","Current Stage","Customer Interest Status","Kickoff Scheduled Date","Kickoff Completed","Registration Completed","Onboarding Scheduled Date","Onboarding Completed","Build Shared","Build Downloaded / Installed","Product Actively Testing","Feedback Session Scheduled Date","Feedback Received","Jira Ticket Created","Jira Ticket ID","Jira Status","PM/Engineering Last Update Date","Customer Updated","Close-Out Email Sent","Survey Sent","Last Customer Touchpoint Date","Notes / Evidence"];
+  download('eap_template.csv', headers.map(h=>`"${h}"`).join(','), 'text/csv');
+}
+
+function download(filename, content, mime) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], {type: mime}));
+  a.download = filename;
+  a.click();
+}
+
+// ══════════════════════════════════════════════════════════
+// FILE HANDLING
+// ══════════════════════════════════════════════════════════
+function loadSample() {
+  processRows(parseCSV(SAMPLE_CSV));
+}
+
+document.getElementById('file-input').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => processRows(parseCSV(ev.target.result));
+  reader.readAsText(file);
+});
+
+const dz = document.getElementById('drop-zone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault();
+  dz.classList.remove('over');
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => processRows(parseCSV(ev.target.result));
+  reader.readAsText(file);
+});
+</script>
+</body>
+</html>
