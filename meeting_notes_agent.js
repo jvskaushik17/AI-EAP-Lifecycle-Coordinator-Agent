@@ -1,23 +1,28 @@
 #!/usr/bin/env node
 /**
- * Meeting Notes Agent
- * -------------------
- * Reads every transcript from your OneDrive "Documents/Meeting notes" folder,
- * extracts meeting notes and action items using Claude, then saves a .md file
- * next to each transcript in the same OneDrive folder using the same name.
+ * Meeting Notes Agent — powered by Ollama (local LLM, zero tokens)
+ * -----------------------------------------------------------------
+ * No API keys. No cloud auth. Runs entirely on your machine.
+ *
+ * Prerequisites (one-time):
+ *   1. Install Ollama     →  https://ollama.ai
+ *   2. Pull a model       →  ollama pull llama3.2
  *
  * Usage:
- *   node meeting_notes_agent.js
+ *   node meeting_notes_agent.js /path/to/Meeting\ notes
+ *   node meeting_notes_agent.js /path/to/Meeting\ notes --watch   # watch for new files
  *
- * Required environment variables (copy .env.example → .env and fill in):
- *   ANTHROPIC_API_KEY   – your Anthropic API key (sk-ant-…)
- *   AZURE_TENANT_ID     – Azure AD tenant ID
- *   AZURE_CLIENT_ID     – Azure AD app (client) ID
+ * OneDrive path (macOS):
+ *   ~/Library/CloudStorage/OneDrive-Infoblox/Documents/Meeting notes
+ *   — or —
+ *   ~/OneDrive\ -\ Infoblox/Documents/Meeting\ notes
  *
- * Optional:
- *   ONEDRIVE_FOLDER     – OneDrive path (default: "Documents/Meeting notes")
+ * Transcript formats supported: .txt  .vtt  .docx (needs: npm install mammoth)
  *
- * Supported transcript formats: .txt  .vtt  .docx (requires npm install mammoth)
+ * Optional env vars (no tokens needed):
+ *   OLLAMA_HOST   – Ollama server URL  (default: http://localhost:11434)
+ *   OLLAMA_MODEL  – Model to use       (default: llama3.2)
+ *   SKIP_EXISTING – Skip up-to-date .md files (default: true)
  */
 
 'use strict';
@@ -25,181 +30,246 @@
 const fs   = require('fs');
 const path = require('path');
 
-// ─── Load .env ───────────────────────────────────────────────────────────────
-
-(function loadEnv() {
-  const envFile = path.join(__dirname, '.env');
-  if (!fs.existsSync(envFile)) return;
-  for (const line of fs.readFileSync(envFile, 'utf8').split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eq = trimmed.indexOf('=');
-    if (eq === -1) continue;
-    const key = trimmed.slice(0, eq).trim();
-    const val = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, '');
-    if (key && !(key in process.env)) process.env[key] = val;
-  }
-})();
-
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const AZURE_TENANT_ID   = process.env.AZURE_TENANT_ID;
-const AZURE_CLIENT_ID   = process.env.AZURE_CLIENT_ID;
-const ONEDRIVE_FOLDER   = process.env.ONEDRIVE_FOLDER || 'Documents/Meeting notes';
-const TOKEN_FILE        = path.join(__dirname, '.meeting_agent_token.json');
-const GRAPH_BASE        = 'https://graph.microsoft.com/v1.0';
-const GRAPH_SCOPES      = 'https://graph.microsoft.com/Files.ReadWrite offline_access openid profile';
+const OLLAMA_BASE     = (process.env.OLLAMA_HOST  || 'http://localhost:11434').replace(/\/$/, '');
+const MODEL           = process.env.OLLAMA_MODEL  || 'llama3.2';
+const SKIP_EXISTING   = process.env.SKIP_EXISTING !== 'false';
+const TRANSCRIPT_EXTS = new Set(['.txt', '.vtt', '.docx']);
 
-// ─── Token management ─────────────────────────────────────────────────────────
+// Models known to support tool/function calling
+const TOOL_CAPABLE_MODELS = ['llama3', 'llama3.1', 'llama3.2', 'llama3.3', 'qwen2.5', 'qwen2', 'mistral-nemo', 'firefunction', 'command-r'];
 
-function loadTokenCache() {
-  try { return JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf8')); } catch { return null; }
-}
+// ─── Ollama API ───────────────────────────────────────────────────────────────
 
-function saveTokenCache(data) {
-  fs.writeFileSync(TOKEN_FILE, JSON.stringify(data, null, 2));
-}
-
-function tokenIsValid(cache) {
-  if (!cache?.access_token) return false;
-  const expiry = (cache.acquired_at || 0) + (cache.expires_in || 0) * 1000;
-  return Date.now() < expiry - 60_000; // 60-second buffer
-}
-
-async function refreshAccessToken(refreshTok) {
-  const body = new URLSearchParams({
-    grant_type:    'refresh_token',
-    client_id:     AZURE_CLIENT_ID,
-    refresh_token: refreshTok,
-    scope:         GRAPH_SCOPES,
-  });
-  const res  = await fetch(`https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/token`, { method: 'POST', body });
-  const data = await res.json();
-  if (!data.access_token) throw new Error(`Token refresh failed: ${data.error_description || data.error}`);
-  data.acquired_at = Date.now();
-  return data;
-}
-
-async function deviceCodeAuth() {
-  // Step 1 – request a device code
-  const dcRes = await fetch(
-    `https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/devicecode`,
-    {
-      method: 'POST',
-      body: new URLSearchParams({ client_id: AZURE_CLIENT_ID, scope: GRAPH_SCOPES }),
-    }
-  );
-  const dc = await dcRes.json();
-  if (!dc.device_code) throw new Error(`Device code request failed: ${JSON.stringify(dc)}`);
-
-  console.log('\n' + dc.message + '\n');
-
-  // Step 2 – poll until the user completes sign-in
-  const interval = (dc.interval || 5) * 1000;
-  const deadline  = Date.now() + (dc.expires_in || 900) * 1000;
-
-  while (Date.now() < deadline) {
-    await sleep(interval);
-    const tokenRes = await fetch(
-      `https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/token`,
-      {
-        method: 'POST',
-        body: new URLSearchParams({
-          grant_type:  'urn:ietf:params:oauth:grant-type:device_code',
-          client_id:   AZURE_CLIENT_ID,
-          device_code: dc.device_code,
-        }),
-      }
-    );
-    const data = await tokenRes.json();
-
-    if (data.access_token) {
-      data.acquired_at = Date.now();
-      return data;
-    }
-    if (data.error === 'authorization_pending') continue;
-    if (data.error === 'slow_down')            { await sleep(interval); continue; }
-    throw new Error(`Auth failed: ${data.error_description || data.error}`);
-  }
-  throw new Error('Device code expired before the user signed in.');
-}
-
-async function getAccessToken() {
-  let cache = loadTokenCache();
-
-  if (tokenIsValid(cache)) return cache.access_token;
-
-  if (cache?.refresh_token) {
-    try {
-      cache = await refreshAccessToken(cache.refresh_token);
-      saveTokenCache(cache);
-      return cache.access_token;
-    } catch (e) {
-      console.warn('Silent refresh failed, re-authenticating…', e.message);
-    }
-  }
-
-  // Interactive device-code sign-in
-  const tokens = await deviceCodeAuth();
-  saveTokenCache(tokens);
-  return tokens.access_token;
-}
-
-// ─── Microsoft Graph helpers ──────────────────────────────────────────────────
-
-async function graphRequest(method, endpoint, body, contentType) {
-  const token = await getAccessToken();
-  const opts  = {
-    method,
-    headers: { Authorization: `Bearer ${token}` },
+async function ollamaChat(messages, tools = []) {
+  const body = {
+    model:  MODEL,
+    messages,
+    stream: false,
+    ...(tools.length ? { tools } : {}),
   };
-  if (body !== undefined) {
-    opts.headers['Content-Type'] = contentType || 'application/json';
-    opts.body = body;
-  }
-  const res = await fetch(`${GRAPH_BASE}${endpoint}`, opts);
+
+  const res = await fetch(`${OLLAMA_BASE}/v1/chat/completions`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
+  });
+
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Graph ${method} ${endpoint} → ${res.status}: ${text}`);
+    const txt = await res.text();
+    throw new Error(`Ollama ${res.status}: ${txt.slice(0, 200)}`);
   }
-  const ct = res.headers.get('Content-Type') || '';
-  if (ct.includes('application/json')) return res.json();
-  return res.arrayBuffer();
+  return res.json();
 }
 
-async function listFolder(folderPath) {
-  const enc  = encodeURIComponent(folderPath);
-  const data = await graphRequest('GET', `/me/drive/root:/${enc}:/children?$top=250&$select=name,id,size`);
-  return data.value || [];
+async function checkOllama() {
+  try {
+    const res = await fetch(`${OLLAMA_BASE}/api/tags`, { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return (data.models || []).map(m => m.name);
+  } catch {
+    return null;
+  }
 }
 
-async function downloadFile(folderPath, fileName) {
-  const enc = encodeURIComponent(`${folderPath}/${fileName}`);
-  return graphRequest('GET', `/me/drive/root:/${enc}:/content`);
+function modelSupportsTools(modelName) {
+  const lower = modelName.toLowerCase();
+  return TOOL_CAPABLE_MODELS.some(k => lower.includes(k));
 }
 
-async function uploadFile(folderPath, fileName, textContent) {
-  const enc = encodeURIComponent(`${folderPath}/${fileName}`);
-  await graphRequest('PUT', `/me/drive/root:/${enc}:/content`, textContent, 'text/plain; charset=utf-8');
+// ─── Tool definition ──────────────────────────────────────────────────────────
+
+const TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name:        'save_meeting_notes',
+      description: 'Save structured meeting notes extracted from the transcript.',
+      parameters: {
+        type: 'object',
+        properties: {
+          meeting_title: {
+            type:        'string',
+            description: 'Topic or title of the meeting.',
+          },
+          meeting_datetime: {
+            type:        'string',
+            description: 'Date and time (ISO 8601 or natural language). Use "Date not specified" if unknown.',
+          },
+          attendees: {
+            type:  'array',
+            items: { type: 'string' },
+            description: 'All identifiable participants.',
+          },
+          meeting_notes: {
+            type:  'array',
+            items: {
+              type: 'object',
+              properties: {
+                topic:   { type: 'string' },
+                summary: { type: 'string' },
+              },
+              required: ['topic', 'summary'],
+            },
+            description: 'Key discussion points, one entry per topic.',
+          },
+          action_items: {
+            type:  'array',
+            items: {
+              type: 'object',
+              properties: {
+                task:     { type: 'string',  description: 'What needs to be done.' },
+                owner:    { type: 'string',  description: 'Person responsible.' },
+                due_date: { type: 'string',  description: 'Deadline, if mentioned.' },
+                priority: { type: 'string',  enum: ['High', 'Medium', 'Low'] },
+              },
+              required: ['task', 'owner', 'priority'],
+            },
+            description: 'Every action item with owner, deadline, and priority.',
+          },
+          decisions_made: {
+            type:  'array',
+            items: { type: 'string' },
+            description: 'Concrete decisions reached during the meeting.',
+          },
+          next_steps: {
+            type:        'string',
+            description: 'Follow-up plan or next-meeting details.',
+          },
+        },
+        required: ['meeting_title', 'meeting_datetime', 'meeting_notes', 'action_items'],
+      },
+    },
+  },
+];
+
+// ─── Prompts ──────────────────────────────────────────────────────────────────
+
+const SYSTEM_TOOL = `You are a precise meeting-notes assistant.
+Analyse the transcript and call save_meeting_notes with:
+• meeting_title and meeting_datetime (exact or inferred)
+• attendees — everyone identifiable
+• meeting_notes — every discussion topic with a concise summary
+• action_items — EVERY item: task, owner, due_date (if mentioned), priority
+  (High=urgent, Medium=standard, Low=nice-to-have)
+• decisions_made — concrete decisions
+• next_steps — follow-up or next meeting info
+Always call the function. Never respond with plain text.`;
+
+const SYSTEM_JSON = `You are a precise meeting-notes assistant.
+Analyse the transcript and return ONLY a JSON object (no explanation, no markdown) with:
+{
+  "meeting_title": "...",
+  "meeting_datetime": "... or Date not specified",
+  "attendees": ["..."],
+  "meeting_notes": [{"topic":"...","summary":"..."}],
+  "action_items": [{"task":"...","owner":"...","due_date":"...","priority":"High|Medium|Low"}],
+  "decisions_made": ["..."],
+  "next_steps": "..."
+}
+Be exhaustive — do not miss any action items.`;
+
+// ─── Extraction agent loop ────────────────────────────────────────────────────
+
+async function extractWithTools(transcript) {
+  let messages = [
+    { role: 'system', content: SYSTEM_TOOL },
+    { role: 'user',   content: `Analyse this transcript and call save_meeting_notes.\n\nTRANSCRIPT:\n---\n${transcript}\n---` },
+  ];
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const resp   = await ollamaChat(messages, TOOLS);
+    const choice = resp.choices?.[0];
+    const msg    = choice?.message;
+
+    // Model called the tool correctly
+    if (msg?.tool_calls?.length) {
+      for (const tc of msg.tool_calls) {
+        if (tc.function?.name === 'save_meeting_notes') {
+          try {
+            return typeof tc.function.arguments === 'string'
+              ? JSON.parse(tc.function.arguments)
+              : tc.function.arguments;
+          } catch { /* bad JSON, fall through */ }
+        }
+      }
+    }
+
+    // Model responded with text — try to parse embedded JSON
+    const text = msg?.content || '';
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (parsed.meeting_title && Array.isArray(parsed.action_items)) return parsed;
+      } catch {}
+    }
+
+    // Nudge and retry
+    if (attempt < 3) {
+      messages = [
+        ...messages,
+        { role: 'assistant', content: text },
+        { role: 'user',      content: 'Please call the save_meeting_notes function. Do not return plain text.' },
+      ];
+    }
+  }
+  return null;
 }
 
-// ─── Text extraction ──────────────────────────────────────────────────────────
+async function extractWithJson(transcript) {
+  const messages = [
+    { role: 'system', content: SYSTEM_JSON },
+    { role: 'user',   content: `Analyse this transcript and return structured JSON only.\n\nTRANSCRIPT:\n---\n${transcript}\n---` },
+  ];
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const resp = await ollamaChat(messages);
+    const text = resp.choices?.[0]?.message?.content || '';
+
+    // strip markdown fences if present
+    const cleaned   = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (parsed.meeting_title && Array.isArray(parsed.action_items)) return parsed;
+      } catch {}
+    }
+  }
+  return null;
+}
+
+async function extractMeetingData(transcript) {
+  // Try tool calling first; fall back to JSON prompt if model doesn't support it
+  if (modelSupportsTools(MODEL)) {
+    const result = await extractWithTools(transcript);
+    if (result) return result;
+  }
+  return extractWithJson(transcript);
+}
+
+// ─── Text extraction from files ───────────────────────────────────────────────
 
 function parseVtt(text) {
-  // Keep only speaker-dialogue lines; strip timestamps, NOTE blocks, header
   return text
     .split('\n')
     .filter(l => {
       const t = l.trim();
-      return t && !t.startsWith('WEBVTT') && !/^\d{2}:\d{2}/.test(t) && !/^NOTE/.test(t) && !/^\d+$/.test(t);
+      return t
+        && !t.startsWith('WEBVTT')
+        && !/^\d{2}:\d{2}/.test(t)
+        && !/^NOTE/.test(t)
+        && !/^\d+$/.test(t);
     })
     .join('\n');
 }
 
-async function extractText(fileName, bytes) {
-  const buf = Buffer.from(bytes);
-  const ext = path.extname(fileName).toLowerCase();
+async function readTranscript(filePath) {
+  const buf = fs.readFileSync(filePath);
+  const ext = path.extname(filePath).toLowerCase();
 
   if (ext === '.vtt') return parseVtt(buf.toString('utf8'));
 
@@ -209,140 +279,12 @@ async function extractText(fileName, bytes) {
       const result  = await mammoth.extractRawText({ buffer: buf });
       return result.value;
     } catch {
-      // mammoth not installed — warn and continue with raw bytes
-      console.warn(`  [warn] Install mammoth (npm install mammoth) for better .docx support.`);
+      process.stdout.write('\n    [hint] npm install mammoth for better .docx support — ');
       return buf.toString('utf8');
     }
   }
 
-  // .txt and everything else
   return buf.toString('utf8');
-}
-
-// ─── Claude tool definition ───────────────────────────────────────────────────
-
-const TOOLS = [
-  {
-    name: 'extract_meeting_data',
-    description:
-      'Extract structured meeting information: title, date/time, attendees, ' +
-      'topical notes, action items, decisions made, and next steps.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        meeting_title: {
-          type: 'string',
-          description: 'Topic or title of the meeting.',
-        },
-        meeting_datetime: {
-          type: 'string',
-          description:
-            'Date and time in ISO 8601 or human-readable form, or "Date not specified".',
-        },
-        attendees: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'List of participants.',
-        },
-        meeting_notes: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              topic:   { type: 'string' },
-              summary: { type: 'string' },
-            },
-            required: ['topic', 'summary'],
-          },
-          description: 'Key discussion points organised by topic.',
-        },
-        action_items: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              task:     { type: 'string', description: 'What needs to be done.' },
-              owner:    { type: 'string', description: 'Who is responsible.' },
-              due_date: { type: 'string', description: 'Deadline if mentioned.' },
-              priority: { type: 'string', enum: ['High', 'Medium', 'Low'] },
-            },
-            required: ['task', 'owner', 'priority'],
-          },
-          description: 'Action items with owner, due date, and priority.',
-        },
-        decisions_made: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Concrete decisions reached.',
-        },
-        next_steps: {
-          type: 'string',
-          description: 'Follow-up plan or next meeting details.',
-        },
-      },
-      required: ['meeting_title', 'meeting_datetime', 'meeting_notes', 'action_items'],
-    },
-  },
-];
-
-const SYSTEM_PROMPT = `You are a professional meeting-notes assistant.
-Analyse the transcript and call extract_meeting_data to return:
-• Meeting title and exact date/time (or best inference).
-• All identifiable attendees.
-• Concise, topic-organised notes covering every discussion point.
-• Every action item: task, owner, due date (if stated), priority
-  (High = urgent/critical, Medium = standard, Low = nice-to-have).
-• Concrete decisions made.
-• Next steps or follow-up meeting info.
-Be exhaustive — do not skip any action items or discussion topics.`;
-
-// ─── Claude extraction ────────────────────────────────────────────────────────
-
-async function extractMeetingNotes(transcriptText) {
-  const { default: Anthropic } = await import('@anthropic-ai/sdk');
-  const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
-
-  let messages = [
-    {
-      role: 'user',
-      content:
-        'Analyse the following transcript with the extract_meeting_data tool.\n\n' +
-        'TRANSCRIPT:\n---\n' + transcriptText + '\n---\n\nBe thorough.',
-    },
-  ];
-
-  for (let iteration = 0; iteration < 10; iteration++) {
-    const response = await client.messages.create({
-      model:      'claude-sonnet-4-6',
-      max_tokens: 4096,
-      system:     SYSTEM_PROMPT,
-      tools:      TOOLS,
-      messages,
-    });
-
-    if (response.stop_reason === 'tool_use') {
-      const toolUses   = response.content.filter(b => b.type === 'tool_use');
-      const results    = [];
-      let extracted    = null;
-
-      for (const tu of toolUses) {
-        if (tu.name === 'extract_meeting_data') extracted = tu.input;
-        results.push({ type: 'tool_result', tool_use_id: tu.id, content: 'Recorded.' });
-      }
-
-      if (extracted) return extracted;
-
-      messages = [
-        ...messages,
-        { role: 'assistant', content: response.content },
-        { role: 'user',      content: results },
-      ];
-    } else {
-      break;
-    }
-  }
-
-  return null;
 }
 
 // ─── Markdown formatter ───────────────────────────────────────────────────────
@@ -356,16 +298,13 @@ function formatMarkdown(data) {
     '## Meeting Details',
     `- **Date/Time:** ${data.meeting_datetime || 'Date not specified'}`,
   );
-
-  if (data.attendees?.length) {
-    lines.push(`- **Attendees:** ${data.attendees.join(', ')}`);
-  }
+  if (data.attendees?.length) lines.push(`- **Attendees:** ${data.attendees.join(', ')}`);
   lines.push('');
 
   if (data.meeting_notes?.length) {
-    lines.push('## Meeting Notes', '');
+    lines.push('## Discussion Notes', '');
     for (const n of data.meeting_notes) {
-      lines.push(`### ${n.topic}`, n.summary, '');
+      lines.push(`### ${n.topic}`, n.summary || '', '');
     }
   }
 
@@ -377,102 +316,190 @@ function formatMarkdown(data) {
 
   if (data.action_items?.length) {
     lines.push(
-      '## Action Items',
-      '',
+      '## Action Items', '',
       '| # | Task | Owner | Due Date | Priority |',
       '|---|------|-------|----------|----------|',
     );
     data.action_items.forEach((a, i) => {
-      lines.push(`| ${i + 1} | ${a.task} | ${a.owner || 'TBD'} | ${a.due_date || 'TBD'} | ${a.priority} |`);
+      const task     = (a.task     || '').replace(/\|/g, '\\|');
+      const owner    = (a.owner    || 'TBD').replace(/\|/g, '\\|');
+      const due_date = (a.due_date || 'TBD').replace(/\|/g, '\\|');
+      lines.push(`| ${i + 1} | ${task} | ${owner} | ${due_date} | ${a.priority || 'Medium'} |`);
     });
     lines.push('');
   }
 
-  if (data.next_steps) {
-    lines.push('## Next Steps', data.next_steps, '');
-  }
+  if (data.next_steps) lines.push('## Next Steps', data.next_steps, '');
 
-  lines.push('---', `*Generated by Meeting Notes Agent on ${new Date().toLocaleString()}*`);
+  lines.push('---', `*Meeting Notes Agent · ${new Date().toLocaleString()} · model: ${MODEL}*`);
   return lines.join('\n');
 }
 
-// ─── Utilities ────────────────────────────────────────────────────────────────
+// ─── File-level processing ────────────────────────────────────────────────────
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-function validateEnv() {
-  const missing = ['ANTHROPIC_API_KEY', 'AZURE_TENANT_ID', 'AZURE_CLIENT_ID'].filter(k => !process.env[k]);
-  if (missing.length) {
-    console.error(`Missing required environment variables: ${missing.join(', ')}`);
-    console.error('Copy .env.example to .env and fill in the values.');
-    process.exit(1);
+function isUpToDate(srcPath, outPath) {
+  if (!SKIP_EXISTING) return false;
+  try {
+    return fs.statSync(outPath).mtimeMs >= fs.statSync(srcPath).mtimeMs;
+  } catch {
+    return false;
   }
+}
+
+async function processFile(filePath) {
+  const stem    = path.basename(filePath, path.extname(filePath));
+  const outPath = path.join(path.dirname(filePath), `${stem}.md`);
+
+  if (isUpToDate(filePath, outPath)) return { status: 'skipped' };
+
+  const text = await readTranscript(filePath);
+  if (!text.trim()) throw new Error('file is empty');
+
+  const data = await extractMeetingData(text);
+  if (!data)  throw new Error('could not extract structured data after retries');
+
+  fs.writeFileSync(outPath, formatMarkdown(data), 'utf8');
+  return { status: 'ok', outPath, actionCount: (data.action_items || []).length };
+}
+
+// ─── Folder scan ──────────────────────────────────────────────────────────────
+
+function scanFolder(folderPath) {
+  return fs.readdirSync(folderPath, { withFileTypes: true })
+    .filter(e => e.isFile() && TRANSCRIPT_EXTS.has(path.extname(e.name).toLowerCase()))
+    .map(e => path.join(folderPath, e.name))
+    .sort();
+}
+
+// ─── Watch mode ───────────────────────────────────────────────────────────────
+
+function watchFolder(folderPath) {
+  console.log('\nWatch mode active — waiting for new or changed transcript files…');
+  console.log('(Press Ctrl+C to stop)\n');
+
+  const pending = new Set();
+
+  fs.watch(folderPath, async (event, filename) => {
+    if (!filename) return;
+    const ext = path.extname(filename).toLowerCase();
+    if (!TRANSCRIPT_EXTS.has(ext)) return;
+    if (pending.has(filename)) return;
+
+    // Debounce — file may still be writing
+    pending.add(filename);
+    setTimeout(async () => {
+      pending.delete(filename);
+      const filePath = path.join(folderPath, filename);
+      if (!fs.existsSync(filePath)) return;
+
+      process.stdout.write(`  [new/changed] ${filename} → `);
+      try {
+        const result = await processFile(filePath);
+        if (result.status === 'skipped') {
+          console.log('skipped (up to date)');
+        } else {
+          console.log(`${path.basename(result.outPath)} (${result.actionCount} action item${result.actionCount !== 1 ? 's' : ''})`);
+        }
+      } catch (err) {
+        console.log(`FAILED — ${err.message}`);
+      }
+    }, 1500);
+  });
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
-  validateEnv();
+  const args       = process.argv.slice(2);
+  const watchMode  = args.includes('--watch');
+  const folderArg  = args.find(a => !a.startsWith('--'));
+
+  if (!folderArg) {
+    console.log(`
+Meeting Notes Agent — zero tokens, powered by Ollama
+
+Usage:
+  node meeting_notes_agent.js <folder>           process all transcripts once
+  node meeting_notes_agent.js <folder> --watch   also watch for new files
+
+Setup (one-time):
+  1. Install Ollama  →  https://ollama.ai
+  2. ollama pull llama3.2
+
+Your OneDrive folder (macOS):
+  ~/Library/CloudStorage/OneDrive-Infoblox/Documents/Meeting\\ notes
+    `);
+    process.exit(1);
+  }
+
+  const folder = path.resolve(folderArg.replace(/^~/, process.env.HOME || '~'));
+  if (!fs.existsSync(folder)) {
+    console.error(`Folder not found: ${folder}`);
+    process.exit(1);
+  }
 
   console.log('Meeting Notes Agent');
-  console.log(`OneDrive folder : ${ONEDRIVE_FOLDER}`);
-  console.log('');
+  console.log(`Folder : ${folder}`);
+  console.log(`Model  : ${MODEL}  (${OLLAMA_BASE})\n`);
 
-  // Authenticate
-  process.stdout.write('Authenticating with Microsoft… ');
-  await getAccessToken();
-  console.log('OK');
+  // ── Verify Ollama is running ──
+  process.stdout.write('Checking Ollama… ');
+  const available = await checkOllama();
 
-  // List files in the OneDrive folder
-  process.stdout.write(`Listing files in "${ONEDRIVE_FOLDER}"… `);
-  const allFiles = await listFolder(ONEDRIVE_FOLDER);
-  console.log(`${allFiles.length} file(s) found`);
-
-  // Filter to transcript files only (skip .md outputs and other types)
-  const TRANSCRIPT_EXTS = new Set(['.txt', '.vtt', '.docx']);
-  const transcripts = allFiles.filter(f => TRANSCRIPT_EXTS.has(path.extname(f.name).toLowerCase()));
-
-  if (!transcripts.length) {
-    console.log('No transcript files (.txt / .vtt / .docx) found — nothing to process.');
-    return;
+  if (!available) {
+    console.error(`not found\n
+Ollama is not running. Please:
+  1. Install Ollama  →  https://ollama.ai
+  2. ollama pull ${MODEL}
+  3. Re-run this agent.
+`);
+    process.exit(1);
   }
+  console.log(`OK (${available.length} model${available.length !== 1 ? 's' : ''} available)`);
 
-  console.log(`Processing ${transcripts.length} transcript(s):\n`);
-
-  const results = [];
-
-  for (const file of transcripts) {
-    const stem    = path.basename(file.name, path.extname(file.name));
-    const outName = `${stem}.md`;
-    process.stdout.write(`  ${file.name} → ${outName} … `);
-
-    try {
-      const bytes = await downloadFile(ONEDRIVE_FOLDER, file.name);
-      const text  = await extractText(file.name, bytes);
-
-      if (!text.trim()) throw new Error('File is empty.');
-
-      const data = await extractMeetingNotes(text);
-      if (!data) throw new Error('Claude returned no structured data.');
-
-      const md = formatMarkdown(data);
-      await uploadFile(ONEDRIVE_FOLDER, outName, md);
-
-      const actionCount = (data.action_items || []).length;
-      console.log(`saved (${actionCount} action item${actionCount !== 1 ? 's' : ''})`);
-      results.push({ name: file.name, out: outName, ok: true });
-
-    } catch (err) {
-      console.log(`FAILED — ${err.message}`);
-      results.push({ name: file.name, ok: false, error: err.message });
+  const modelOk = available.some(m => m.split(':')[0] === MODEL.split(':')[0]);
+  if (!modelOk) {
+    console.log(`\nModel "${MODEL}" is not installed.`);
+    if (available.length) {
+      console.log(`Available: ${available.join(', ')}`);
+      console.log(`Re-run with:  OLLAMA_MODEL=${available[0].split(':')[0]} node meeting_notes_agent.js <folder>`);
+    } else {
+      console.log(`Run:  ollama pull ${MODEL}`);
     }
+    process.exit(1);
   }
 
-  // Summary
-  const ok   = results.filter(r => r.ok).length;
-  const fail = results.length - ok;
-  console.log(`\nDone — ${ok} succeeded${fail ? `, ${fail} failed` : ''}.`);
-  if (fail) process.exitCode = 1;
+  // ── Process existing files ──
+  const files = scanFolder(folder);
+  if (!files.length) {
+    console.log('\nNo transcript files (.txt / .vtt / .docx) found.');
+  } else {
+    console.log(`\nProcessing ${files.length} file${files.length !== 1 ? 's' : ''}:\n`);
+    let ok = 0, skipped = 0, failed = 0;
+
+    for (const filePath of files) {
+      process.stdout.write(`  ${path.basename(filePath)} → `);
+      try {
+        const result = await processFile(filePath);
+        if (result.status === 'skipped') {
+          console.log('skipped (up to date)');
+          skipped++;
+        } else {
+          console.log(`${path.basename(result.outPath)} (${result.actionCount} action item${result.actionCount !== 1 ? 's' : ''})`);
+          ok++;
+        }
+      } catch (err) {
+        console.log(`FAILED — ${err.message}`);
+        failed++;
+      }
+    }
+
+    console.log(`\n${ok} processed, ${skipped} skipped, ${failed} failed.`);
+    if (failed) process.exitCode = 1;
+  }
+
+  // ── Watch mode ──
+  if (watchMode) watchFolder(folder);
 }
 
-main().catch(err => { console.error('\nFatal error:', err.message); process.exit(1); });
+main().catch(err => { console.error('\nFatal:', err.message); process.exit(1); });

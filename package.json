@@ -1,7 +1,7 @@
 {
   "name": "meeting-notes-agent",
-  "version": "1.0.0",
-  "description": "Extract meeting notes and action items from OneDrive transcripts using Claude",
+  "version": "2.0.0",
+  "description": "Smart meeting notes agent — Ollama (local LLM), zero tokens, zero Python",
   "main": "meeting_notes_agent.js",
   "scripts": {
     "start": "node meeting_notes_agent.js"
@@ -9,8 +9,7 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.30.0",
+  "optionalDependencies": {
     "mammoth": "^1.8.0"
   }
 }
