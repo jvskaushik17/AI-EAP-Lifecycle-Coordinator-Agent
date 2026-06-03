@@ -1,20 +1,18 @@
 """
 Meeting Notes App (Streamlit)
 ------------------------------
-Drag-and-drop or paste a meeting transcript to extract structured notes and
-action items with Claude.  The resulting Markdown file is saved to the same
-folder as the uploaded transcript (when a path is provided) and can also be
-downloaded directly from the browser.
+Enter the path to a folder of meeting transcripts and click Run.
+Claude processes every .txt file, saves a .md file next to each one,
+and shows the results here.
 
 Run:
     streamlit run meeting_notes_app.py
 """
 
 import os
-import tempfile
-from datetime import datetime
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
 from meeting_notes_agent import extract_meeting_notes, format_markdown
@@ -28,10 +26,6 @@ st.set_page_config(
     page_icon="📝",
     layout="wide",
 )
-
-# ---------------------------------------------------------------------------
-# Custom CSS — match the existing app's card / badge style
-# ---------------------------------------------------------------------------
 
 st.markdown(
     """
@@ -55,16 +49,6 @@ st.markdown(
     }
     .metric-card .value { font-size: 2rem; font-weight: 700; color: #4c1d95; }
     .metric-card .label { font-size: 0.85rem; color: #64748b; margin-top: 0.2rem; }
-
-    .badge-high   { background:#fee2e2; color:#dc2626; padding:2px 8px;
-                    border-radius:12px; font-size:0.78rem; font-weight:600; }
-    .badge-medium { background:#fef3c7; color:#d97706; padding:2px 8px;
-                    border-radius:12px; font-size:0.78rem; font-weight:600; }
-    .badge-low    { background:#d1fae5; color:#059669; padding:2px 8px;
-                    border-radius:12px; font-size:0.78rem; font-weight:600; }
-
-    .action-table th { background:#f1f5f9; }
-    .stTextArea textarea { font-family: monospace; font-size: 0.85rem; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -78,15 +62,15 @@ st.markdown(
     """
     <div class="main-header">
         <h1>📝 Meeting Notes Agent</h1>
-        <p>Upload a transcript or paste text — Claude extracts notes, decisions,
-           and action items and saves a Markdown file to the same folder.</p>
+        <p>Point to a folder of .txt transcripts — Claude extracts notes, decisions,
+           and action items and saves a .md file next to each transcript.</p>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
 # ---------------------------------------------------------------------------
-# Sidebar — configuration
+# Sidebar
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
@@ -102,301 +86,222 @@ with st.sidebar:
         os.environ["ANTHROPIC_API_KEY"] = api_key
 
     st.divider()
-    st.markdown("### How it works")
     st.markdown(
         """
-1. **Upload** a `.txt` transcript or paste text below.
-2. Click **Extract Meeting Notes**.
-3. Claude identifies:
+### How it works
+1. Enter the **folder path** that contains your `.txt` transcript files.
+2. Click **Run Agent**.
+3. Claude processes each transcript and extracts:
    - Meeting title & date/time
    - Attendees
    - Discussion notes by topic
    - Decisions made
-   - Action items (owner, due date, priority)
+   - Action items (owner · due date · priority)
    - Next steps
-4. The Markdown file is **saved next to the original** and is also available to **download** here.
+4. A **Markdown file** is saved next to each transcript with the same name.
         """
     )
-
     st.divider()
-    st.caption("Powered by Claude claude-sonnet-4-6 · anthropic")
+    st.caption("Powered by Claude claude-sonnet-4-6 · Anthropic")
 
 # ---------------------------------------------------------------------------
-# Input section
+# Main input
 # ---------------------------------------------------------------------------
 
-col_left, col_right = st.columns([1, 1], gap="large")
+if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
+    st.warning("Enter your Anthropic API key in the sidebar to continue.")
 
-with col_left:
-    st.subheader("📂 Input Transcript")
+folder_input = st.text_input(
+    "Transcripts folder path",
+    placeholder="/path/to/transcripts",
+    help="Folder containing .txt meeting transcript files.",
+)
 
-    input_mode = st.radio(
-        "Input method",
-        ["Upload file", "Paste text"],
-        horizontal=True,
-        label_visibility="collapsed",
+run_btn = st.button(
+    "Run Agent",
+    type="primary",
+    disabled=not (
+        folder_input.strip() and os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# Processing
+# ---------------------------------------------------------------------------
+
+if run_btn and folder_input.strip():
+    folder = Path(folder_input.strip())
+
+    if not folder.is_dir():
+        st.error(f"Directory not found: `{folder}`")
+        st.stop()
+
+    files = sorted(folder.glob("*.txt"))
+    if not files:
+        st.warning(f"No .txt files found in `{folder}`")
+        st.stop()
+
+    st.info(f"Found **{len(files)}** transcript(s) in `{folder.resolve()}`")
+
+    progress = st.progress(0, text="Starting…")
+    all_results = []   # list of (filename, data_dict | None, error | None)
+
+    for idx, src in enumerate(files):
+        progress.progress(
+            int(idx / len(files) * 100),
+            text=f"Processing {src.name} ({idx + 1}/{len(files)})…",
+        )
+
+        try:
+            text = src.read_text(encoding="utf-8").strip()
+            if not text:
+                all_results.append((src, None, "File is empty."))
+                continue
+
+            data = extract_meeting_notes(text)
+            if not data:
+                all_results.append((src, None, "Claude returned no structured data."))
+                continue
+
+            md = format_markdown(data)
+            out = src.parent / f"{src.stem}.md"
+            out.write_text(md, encoding="utf-8")
+            all_results.append((src, data, None))
+
+        except Exception as exc:
+            all_results.append((src, None, str(exc)))
+
+    progress.progress(100, text="Done!")
+
+    # -----------------------------------------------------------------------
+    # Summary metrics
+    # -----------------------------------------------------------------------
+
+    ok_results = [(src, d) for src, d, err in all_results if d]
+    fail_results = [(src, err) for src, d, err in all_results if err]
+
+    total_actions = sum(
+        len(d.get("action_items") or []) for _, d in ok_results
+    )
+    total_high = sum(
+        sum(1 for a in (d.get("action_items") or []) if a.get("priority") == "High")
+        for _, d in ok_results
     )
 
-    transcript_text = ""
-    source_dir: Path | None = None
-    source_stem: str = "meeting_notes"
-
-    if input_mode == "Upload file":
-        uploaded = st.file_uploader(
-            "Drop your transcript (.txt)",
-            type=["txt"],
-            help="Plain-text meeting transcript",
-        )
-        if uploaded:
-            transcript_text = uploaded.read().decode("utf-8")
-            source_stem = Path(uploaded.name).stem
-            st.success(f"Loaded **{uploaded.name}** ({len(transcript_text):,} chars)")
-
-            # Optional: let user specify where the file lives so we can save it there
-            save_dir_input = st.text_input(
-                "📁 Original file directory (optional)",
-                placeholder="/path/to/transcripts",
-                help=(
-                    "If you want the .md file saved next to the original transcript, "
-                    "enter the folder path here. Leave blank to download only."
-                ),
-            )
-            if save_dir_input.strip():
-                source_dir = Path(save_dir_input.strip())
-
-    else:
-        transcript_text = st.text_area(
-            "Paste transcript",
-            height=300,
-            placeholder="Paste your meeting transcript here…",
-        )
-        source_stem = st.text_input(
-            "Output file name (without extension)",
-            value=f"meeting_{datetime.now().strftime('%Y-%m-%d')}",
-        )
-        save_dir_input = st.text_input(
-            "📁 Save directory (optional)",
-            placeholder="/path/to/transcripts",
-            help="Folder where the .md file will be saved. Leave blank to download only.",
-        )
-        if save_dir_input.strip():
-            source_dir = Path(save_dir_input.strip())
-
-    # Character preview
-    if transcript_text:
-        with st.expander("Preview transcript", expanded=False):
-            st.text(transcript_text[:2000] + ("…" if len(transcript_text) > 2000 else ""))
-
-# ---------------------------------------------------------------------------
-# Extraction
-# ---------------------------------------------------------------------------
-
-with col_right:
-    st.subheader("📋 Extracted Notes")
-
-    ready = bool(transcript_text.strip()) and bool(
-        os.environ.get("ANTHROPIC_API_KEY", "").strip()
-    )
-
-    if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
-        st.warning("Enter your Anthropic API key in the sidebar to continue.")
-
-    extract_btn = st.button(
-        "⚡ Extract Meeting Notes",
-        disabled=not ready,
-        use_container_width=True,
-        type="primary",
-    )
-
-    if extract_btn and ready:
-        with st.spinner("Claude is analysing the transcript…"):
-            try:
-                data = extract_meeting_notes(transcript_text)
-            except Exception as exc:
-                st.error(f"Extraction failed: {exc}")
-                st.stop()
-
-        if not data:
-            st.error("Claude returned no structured data. Please check the transcript.")
-            st.stop()
-
-        md_content = format_markdown(data)
-
-        # ---- Metrics row ----
-        action_items = data.get("action_items") or []
-        high   = sum(1 for a in action_items if a.get("priority") == "High")
-        medium = sum(1 for a in action_items if a.get("priority") == "Medium")
-        low    = sum(1 for a in action_items if a.get("priority") == "Low")
-
-        m1, m2, m3, m4 = st.columns(4)
-        with m1:
-            st.markdown(
-                f'<div class="metric-card"><div class="value">{len(action_items)}</div>'
-                f'<div class="label">Action Items</div></div>',
-                unsafe_allow_html=True,
-            )
-        with m2:
-            st.markdown(
-                f'<div class="metric-card"><div class="value" style="color:#dc2626">{high}</div>'
-                f'<div class="label">High Priority</div></div>',
-                unsafe_allow_html=True,
-            )
-        with m3:
-            st.markdown(
-                f'<div class="metric-card"><div class="value" style="color:#d97706">{medium}</div>'
-                f'<div class="label">Medium Priority</div></div>',
-                unsafe_allow_html=True,
-            )
-        with m4:
-            st.markdown(
-                f'<div class="metric-card"><div class="value" style="color:#059669">{low}</div>'
-                f'<div class="label">Low Priority</div></div>',
-                unsafe_allow_html=True,
-            )
-
-        st.markdown("")
-
-        # ---- Meeting details ----
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
         st.markdown(
-            f"**{data.get('meeting_title', 'Meeting')}**  \n"
-            f"🕐 {data.get('meeting_datetime', 'Date not specified')}"
+            f'<div class="metric-card"><div class="value">{len(files)}</div>'
+            f'<div class="label">Transcripts</div></div>',
+            unsafe_allow_html=True,
         )
-        attendees = data.get("attendees") or []
-        if attendees:
-            st.markdown(f"👥 {', '.join(attendees)}")
+    with c2:
+        st.markdown(
+            f'<div class="metric-card"><div class="value" style="color:#059669">'
+            f'{len(ok_results)}</div>'
+            f'<div class="label">Processed</div></div>',
+            unsafe_allow_html=True,
+        )
+    with c3:
+        st.markdown(
+            f'<div class="metric-card"><div class="value">{total_actions}</div>'
+            f'<div class="label">Action Items</div></div>',
+            unsafe_allow_html=True,
+        )
+    with c4:
+        st.markdown(
+            f'<div class="metric-card"><div class="value" style="color:#dc2626">'
+            f'{total_high}</div>'
+            f'<div class="label">High Priority</div></div>',
+            unsafe_allow_html=True,
+        )
 
-        st.divider()
+    st.markdown("")
 
-        # ---- Notes by topic ----
-        notes = data.get("meeting_notes") or []
-        if notes:
-            st.markdown("### Discussion Notes")
-            for note in notes:
-                with st.expander(note.get("topic", "Topic"), expanded=True):
-                    st.markdown(note.get("summary", ""))
+    # -----------------------------------------------------------------------
+    # Per-file results
+    # -----------------------------------------------------------------------
 
-        # ---- Decisions ----
-        decisions = data.get("decisions_made") or []
-        if decisions:
-            st.markdown("### Decisions Made")
-            for d in decisions:
-                st.markdown(f"- {d}")
+    for src, data, err in all_results:
+        if err:
+            st.error(f"**{src.name}** — {err}")
+            continue
 
-        # ---- Action items table ----
-        if action_items:
-            st.markdown("### Action Items")
-            import pandas as pd
+        out_name = f"{src.stem}.md"
+        with st.expander(f"**{src.name}** → `{out_name}`", expanded=False):
+            action_items = data.get("action_items") or []
 
-            rows = [
-                {
-                    "#": i + 1,
-                    "Task": a.get("task", ""),
-                    "Owner": a.get("owner", "TBD"),
-                    "Due Date": a.get("due_date") or "TBD",
-                    "Priority": a.get("priority", "Medium"),
-                }
-                for i, a in enumerate(action_items)
-            ]
-            df = pd.DataFrame(rows).set_index("#")
-
-            def colour_priority(val: str) -> str:
-                colours = {"High": "background-color:#fee2e2",
-                           "Medium": "background-color:#fef3c7",
-                           "Low": "background-color:#d1fae5"}
-                return colours.get(val, "")
-
-            st.dataframe(
-                df.style.applymap(colour_priority, subset=["Priority"]),
-                use_container_width=True,
+            st.markdown(
+                f"**{data.get('meeting_title', 'Meeting')}**  \n"
+                f"Date/Time: {data.get('meeting_datetime', 'Not specified')}"
             )
 
-        # ---- Next steps ----
-        next_steps = data.get("next_steps", "")
-        if next_steps:
-            st.markdown("### Next Steps")
-            st.info(next_steps)
+            attendees = data.get("attendees") or []
+            if attendees:
+                st.markdown(f"Attendees: {', '.join(attendees)}")
 
+            # Notes
+            notes = data.get("meeting_notes") or []
+            if notes:
+                st.markdown("**Discussion Notes**")
+                for note in notes:
+                    st.markdown(f"- **{note.get('topic')}:** {note.get('summary')}")
+
+            # Decisions
+            decisions = data.get("decisions_made") or []
+            if decisions:
+                st.markdown("**Decisions Made**")
+                for d in decisions:
+                    st.markdown(f"- {d}")
+
+            # Action items table
+            if action_items:
+                st.markdown("**Action Items**")
+                rows = [
+                    {
+                        "#": i + 1,
+                        "Task": a.get("task", ""),
+                        "Owner": a.get("owner", "TBD"),
+                        "Due Date": a.get("due_date") or "TBD",
+                        "Priority": a.get("priority", "Medium"),
+                    }
+                    for i, a in enumerate(action_items)
+                ]
+                df = pd.DataFrame(rows).set_index("#")
+
+                def _colour(val: str) -> str:
+                    return {
+                        "High": "background-color:#fee2e2",
+                        "Medium": "background-color:#fef3c7",
+                        "Low": "background-color:#d1fae5",
+                    }.get(val, "")
+
+                st.dataframe(
+                    df.style.applymap(_colour, subset=["Priority"]),
+                    use_container_width=True,
+                )
+
+            # Next steps
+            next_steps = data.get("next_steps", "")
+            if next_steps:
+                st.info(f"**Next Steps:** {next_steps}")
+
+            # Download button for this file's markdown
+            md_content = format_markdown(data)
+            st.download_button(
+                label=f"Download {out_name}",
+                data=md_content.encode("utf-8"),
+                file_name=out_name,
+                mime="text/markdown",
+                key=f"dl_{src.stem}",
+            )
+
+    # -----------------------------------------------------------------------
+    # Failures summary
+    # -----------------------------------------------------------------------
+
+    if fail_results:
         st.divider()
-
-        # ---- Save & download ----
-        output_filename = f"{source_stem}.md"
-
-        if source_dir:
-            try:
-                source_dir.mkdir(parents=True, exist_ok=True)
-                out_path = source_dir / output_filename
-                out_path.write_text(md_content, encoding="utf-8")
-                st.success(f"Saved to **{out_path}**")
-            except Exception as exc:
-                st.error(f"Could not save file: {exc}")
-
-        st.download_button(
-            label=f"⬇️ Download {output_filename}",
-            data=md_content.encode("utf-8"),
-            file_name=output_filename,
-            mime="text/markdown",
-            use_container_width=True,
-        )
-
-        with st.expander("View raw Markdown", expanded=False):
-            st.code(md_content, language="markdown")
-
-# ---------------------------------------------------------------------------
-# Batch processing section
-# ---------------------------------------------------------------------------
-
-st.divider()
-st.subheader("🗂️ Batch Process a Folder")
-
-with st.expander("Process all .txt transcripts in a directory", expanded=False):
-    batch_dir = st.text_input(
-        "Folder path",
-        placeholder="/path/to/transcripts",
-        key="batch_dir",
-    )
-    batch_btn = st.button(
-        "▶ Process All",
-        disabled=not (batch_dir.strip() and os.environ.get("ANTHROPIC_API_KEY", "").strip()),
-        key="batch_btn",
-    )
-
-    if batch_btn:
-        folder = Path(batch_dir.strip())
-        if not folder.is_dir():
-            st.error(f"Directory not found: {folder}")
-        else:
-            files = sorted(folder.glob("*.txt"))
-            if not files:
-                st.warning("No .txt files found in that directory.")
-            else:
-                progress = st.progress(0, text="Starting…")
-                results = []
-                for idx, f in enumerate(files):
-                    progress.progress(
-                        int((idx / len(files)) * 100),
-                        text=f"Processing {f.name}…",
-                    )
-                    try:
-                        text = f.read_text(encoding="utf-8").strip()
-                        if not text:
-                            results.append((f.name, None, "Empty file"))
-                            continue
-                        extracted = extract_meeting_notes(text)
-                        if not extracted:
-                            results.append((f.name, None, "No data returned"))
-                            continue
-                        md = format_markdown(extracted)
-                        out = f.parent / f"{f.stem}.md"
-                        out.write_text(md, encoding="utf-8")
-                        results.append((f.name, out.name, None))
-                    except Exception as exc:
-                        results.append((f.name, None, str(exc)))
-
-                progress.progress(100, text="Done!")
-
-                st.markdown("**Results:**")
-                for src, out, err in results:
-                    if err:
-                        st.error(f"✗ {src}: {err}")
-                    else:
-                        st.success(f"✓ {src} → {out}")
+        st.markdown("**Failed files:**")
+        for src, err in fail_results:
+            st.error(f"{src.name}: {err}")

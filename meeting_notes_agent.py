@@ -1,19 +1,15 @@
 """
 Meeting Notes Agent
 -------------------
-Extracts meeting notes, action items, decisions, and attendee information
-from a meeting transcript using Claude tool-use and saves the result as a
-Markdown file in the same directory as the source transcript.
+Give it a folder that contains meeting transcripts (.txt files) and it will:
+  1. Read every transcript in the folder.
+  2. Use Claude to extract meeting notes, decisions, and action items.
+  3. Save a Markdown file (.md) next to each transcript, using the same name.
 
 CLI usage:
-    python meeting_notes_agent.py <transcript_file>
-    python meeting_notes_agent.py transcripts/   # batch-process all .txt files
-
-The output file will have the same base name as the transcript with a .md
-extension, saved in the same folder.
+    python meeting_notes_agent.py /path/to/transcripts/
 """
 
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -127,7 +123,7 @@ Be exhaustive — do not drop action items or discussion points."""
 
 
 # ---------------------------------------------------------------------------
-# Core extraction logic
+# Core extraction
 # ---------------------------------------------------------------------------
 
 
@@ -176,12 +172,10 @@ def extract_meeting_notes(transcript_text: str) -> dict:
             if extracted_data:
                 return extracted_data
 
-            # Feed results back and continue
             messages.append({"role": "assistant", "content": response.content})
             messages.append({"role": "user", "content": tool_results})
 
         else:
-            # end_turn or other stop — no tool data available
             return {}
 
 
@@ -210,7 +204,6 @@ def format_markdown(data: dict) -> str:
 
     lines.append("")
 
-    # Discussion notes
     notes = data.get("meeting_notes") or []
     if notes:
         lines.append("## Meeting Notes")
@@ -220,7 +213,6 @@ def format_markdown(data: dict) -> str:
             lines.append(note.get("summary", ""))
             lines.append("")
 
-    # Decisions
     decisions = data.get("decisions_made") or []
     if decisions:
         lines.append("## Decisions Made")
@@ -228,7 +220,6 @@ def format_markdown(data: dict) -> str:
             lines.append(f"- {d}")
         lines.append("")
 
-    # Action items table
     action_items = data.get("action_items") or []
     if action_items:
         lines += [
@@ -245,7 +236,6 @@ def format_markdown(data: dict) -> str:
             lines.append(f"| {i} | {task} | {owner} | {due} | {priority} |")
         lines.append("")
 
-    # Next steps
     next_steps = data.get("next_steps", "")
     if next_steps:
         lines += ["## Next Steps", next_steps, ""]
@@ -260,40 +250,50 @@ def format_markdown(data: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
-# File-level entry point
+# Folder processing
 # ---------------------------------------------------------------------------
 
 
-def process_transcript_file(transcript_path: str) -> str:
+def process_folder(folder_path: str) -> list[tuple[str, str | None, str | None]]:
     """
-    Read *transcript_path*, extract notes with Claude, and write a Markdown
-    file to the same directory with the same base name (.md extension).
+    Process every .txt transcript in *folder_path*.
 
-    Returns the absolute path of the saved notes file.
+    For each file, saves a .md file in the same folder with the same base name.
+    Returns a list of (source_filename, output_filename, error_message) tuples.
     """
-    src = Path(transcript_path).resolve()
+    folder = Path(folder_path).resolve()
 
-    if not src.exists():
-        raise FileNotFoundError(f"Transcript not found: {src}")
+    if not folder.is_dir():
+        raise NotADirectoryError(f"Not a directory: {folder}")
 
-    text = src.read_text(encoding="utf-8").strip()
-    if not text:
-        raise ValueError(f"Transcript file is empty: {src}")
+    files = sorted(folder.glob("*.txt"))
+    if not files:
+        raise FileNotFoundError(f"No .txt transcript files found in: {folder}")
 
-    print(f"  Processing: {src.name}")
-    print("  Calling Claude to extract meeting notes and action items…")
+    results = []
+    for src in files:
+        print(f"  Processing: {src.name}")
+        try:
+            text = src.read_text(encoding="utf-8").strip()
+            if not text:
+                raise ValueError("File is empty.")
 
-    data = extract_meeting_notes(text)
-    if not data:
-        raise RuntimeError("Claude did not return structured data for this transcript.")
+            data = extract_meeting_notes(text)
+            if not data:
+                raise RuntimeError("Claude returned no structured data.")
 
-    md = format_markdown(data)
+            md = format_markdown(data)
+            out = src.parent / f"{src.stem}.md"
+            out.write_text(md, encoding="utf-8")
 
-    out_path = src.parent / f"{src.stem}.md"
-    out_path.write_text(md, encoding="utf-8")
+            print(f"  Saved:      {out.name}")
+            results.append((src.name, out.name, None))
 
-    print(f"  Saved:      {out_path}")
-    return str(out_path)
+        except Exception as exc:
+            print(f"  FAILED:     {src.name} — {exc}")
+            results.append((src.name, None, str(exc)))
+
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -302,36 +302,23 @@ def process_transcript_file(transcript_path: str) -> str:
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
-        print("Usage:")
-        print("  python meeting_notes_agent.py <transcript_file>")
-        print("  python meeting_notes_agent.py <folder/>   # batch all .txt files")
+    if len(sys.argv) != 2:
+        print("Usage:  python meeting_notes_agent.py /path/to/transcripts/")
         sys.exit(1)
 
-    target = Path(sys.argv[1])
+    folder = Path(sys.argv[1])
+    print(f"\nMeeting Notes Agent — scanning: {folder.resolve()}\n")
 
-    if target.is_dir():
-        files = sorted(target.glob("*.txt"))
-        if not files:
-            print(f"No .txt files found in {target}")
-            sys.exit(1)
-        results = []
-        for f in files:
-            try:
-                out = process_transcript_file(str(f))
-                results.append((f.name, Path(out).name, None))
-            except Exception as exc:
-                results.append((f.name, None, str(exc)))
+    try:
+        results = process_folder(str(folder))
+    except (NotADirectoryError, FileNotFoundError) as exc:
+        print(f"Error: {exc}")
+        sys.exit(1)
 
-        print("\nBatch summary:")
-        for src_name, out_name, err in results:
-            if err:
-                print(f"  FAILED  {src_name}: {err}")
-            else:
-                print(f"  OK      {src_name} -> {out_name}")
-    else:
-        out = process_transcript_file(str(target))
-        print(f"\nDone! Notes file: {out}")
+    ok = sum(1 for _, out, _ in results if out)
+    fail = len(results) - ok
+
+    print(f"\nDone — {ok} succeeded, {fail} failed.")
 
 
 if __name__ == "__main__":
