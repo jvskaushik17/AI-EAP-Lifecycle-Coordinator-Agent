@@ -9,6 +9,9 @@
   "engines": {
     "node": ">=18.0.0"
   },
+  "dependencies": {
+    "docx": "^8.5.0"
+  },
   "optionalDependencies": {
     "mammoth": "^1.8.0"
   }
