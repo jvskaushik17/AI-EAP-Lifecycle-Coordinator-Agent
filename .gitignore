@@ -9,5 +9,8 @@ venv/
 
 # Node
 node_modules/
+
+# Auth / session caches (contain sensitive tokens — never commit)
 .meeting_agent_token.json
 .graph_token.json
+.sp_session.json

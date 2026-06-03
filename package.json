@@ -1,16 +1,20 @@
 {
   "name": "meeting-notes-agent",
-  "version": "2.0.0",
-  "description": "Smart meeting notes agent — Ollama (local LLM), zero tokens, zero Python",
+  "version": "3.0.0",
+  "description": "Smart meeting notes agent — browser-based SharePoint auth, Ollama LLM, zero tokens",
   "main": "meeting_notes_agent.js",
   "scripts": {
-    "start": "node meeting_notes_agent.js"
+    "start":   "node meeting_notes_agent.js",
+    "watch":   "node meeting_notes_agent.js --watch",
+    "reauth":  "node meeting_notes_agent.js --reauth",
+    "install-browser": "playwright install chromium"
   },
   "engines": {
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "docx": "^8.5.0"
+    "docx":       "^8.5.0",
+    "playwright": "^1.44.0"
   },
   "optionalDependencies": {
     "mammoth": "^1.8.0"
