@@ -6,7 +6,16 @@
 import streamlit as st
 import pandas as pd
 import io
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import date, datetime
+
+try:
+    import requests
+    HAS_REQUESTS = True
+except ImportError:
+    HAS_REQUESTS = False
 
 # ─── Page Config ─────────────────────────────────────────────
 
@@ -602,6 +611,94 @@ Thank you again, {fn}. It's been a genuine pleasure working with you on this.
 {_sig(am_name, am_eml)}"""
 
 
+# ─── Teams & Outlook Integration ─────────────────────────────
+
+def extract_subject(email_text):
+    """Pull the Subject: line out of a draft email string."""
+    for line in email_text.strip().splitlines():
+        if line.lower().startswith("subject:"):
+            return line[8:].strip()
+    return "EAP Follow-Up"
+
+
+def _priority_color(priority):
+    return {"High": "d32f2f", "Medium": "e65100", "Low": "2e7d32"}.get(priority, "0d1b4b")
+
+
+def post_to_teams(webhook_url, title, facts, text="", theme_color="0d1b4b"):
+    """
+    Post a MessageCard to a Teams Incoming Webhook.
+    facts: list of {"name": ..., "value": ...} dicts.
+    """
+    payload = {
+        "@type": "MessageCard",
+        "@context": "http://schema.org/extensions",
+        "themeColor": theme_color,
+        "summary": title,
+        "sections": [{
+            "activityTitle": title,
+            "facts": facts,
+            "text": text,
+            "markdown": True,
+        }],
+    }
+    r = requests.post(webhook_url, json=payload, timeout=10)
+    r.raise_for_status()
+
+
+def post_action_to_teams(webhook_url, action):
+    """Post a single action card to Teams."""
+    pri = action.get("Priority", "Medium")
+    icons = {"High": "🔴", "Medium": "🟡", "Low": "🟢"}
+    title = f"{icons.get(pri, '•')} {pri.upper()} — {action['Customer Name']} | {action['EAP Name']}"
+    facts = [
+        {"name": "Action",      "value": action.get("Recommended Action", "")},
+        {"name": "Missing",     "value": action.get("Missing Step", "")},
+        {"name": "Stage",       "value": action.get("Current Stage", "")},
+        {"name": "Stakeholder", "value": action.get("Stakeholder to Contact", "")},
+        {"name": "Owner",       "value": action.get("Suggested Next Owner", "")},
+        {"name": "Touchpoint",  "value": f"{action.get('Days Since Touchpoint', 'N/A')} days ago"},
+    ]
+    evidence = action.get("Evidence", "—")
+    post_to_teams(webhook_url, title, facts,
+                  text=f"**Evidence:** {evidence}" if evidence != "—" else "",
+                  theme_color=_priority_color(pri))
+
+
+def post_summary_to_teams(webhook_url, df_actions):
+    """Post a full action-queue summary card to Teams."""
+    high_items  = df_actions[df_actions["Priority"] == "High"]
+    med_items   = df_actions[df_actions["Priority"] == "Medium"]
+    low_items   = df_actions[df_actions["Priority"] == "Low"]
+
+    def bullet_list(rows):
+        parts = [f"{r['Customer Name']} — {r['Recommended Action']}" for _, r in rows.iterrows()]
+        return "; ".join(parts) if parts else "None"
+
+    facts = [
+        {"name": f"🔴 HIGH ({len(high_items)})",   "value": bullet_list(high_items)},
+        {"name": f"🟡 MEDIUM ({len(med_items)})",  "value": bullet_list(med_items)},
+        {"name": f"🟢 LOW ({len(low_items)})",     "value": bullet_list(low_items)},
+    ]
+    title = f"🚀 EAP Action Queue Update — {date.today().strftime('%B %-d, %Y')}"
+    post_to_teams(webhook_url, title, facts, theme_color="0d1b4b")
+
+
+def send_via_outlook(sender_email, sender_password, to_email, subject, body):
+    """Send an email via Office 365 SMTP."""
+    msg = MIMEMultipart()
+    msg["From"]    = sender_email
+    msg["To"]      = to_email
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain"))
+
+    with smtplib.SMTP("smtp.office365.com", 587) as server:
+        server.ehlo()
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.send_message(msg)
+
+
 # ─── Jira Draft Generator ─────────────────────────────────────
 
 def generate_jira_draft(row):
@@ -1133,6 +1230,70 @@ def main():
             )
 
         st.divider()
+
+        # ── Integrations ──────────────────────────────────────
+        st.header("🔗 Integrations")
+
+        with st.expander("Microsoft Teams", expanded=False):
+            st.caption("Paste an **Incoming Webhook URL** from any Teams channel.")
+            teams_url = st.text_input(
+                "Webhook URL",
+                value=st.session_state.get("teams_webhook", ""),
+                type="password",
+                placeholder="https://outlook.office.com/webhook/...",
+                key="teams_url_input",
+            )
+            if teams_url:
+                st.session_state["teams_webhook"] = teams_url
+
+            if st.button("📣 Post Full Queue Summary to Teams",
+                         disabled=not st.session_state.get("teams_webhook"),
+                         use_container_width=True):
+                try:
+                    post_summary_to_teams(st.session_state["teams_webhook"], filtered)
+                    st.success("✅ Summary posted to Teams!")
+                except Exception as exc:
+                    st.error(f"Teams error: {exc}")
+
+            if not HAS_REQUESTS:
+                st.warning("Install `requests` to enable Teams posting.")
+
+        with st.expander("Outlook / Office 365", expanded=False):
+            st.caption("Uses Office 365 SMTP. Requires an **App Password** "
+                       "(not your regular login) if MFA is enabled — "
+                       "[generate one here](https://account.microsoft.com/security).")
+            ol_email = st.text_input(
+                "Your Office 365 email",
+                value=st.session_state.get("outlook_email", ""),
+                placeholder="you@company.com",
+                key="ol_email_input",
+            )
+            ol_pass = st.text_input(
+                "App Password",
+                type="password",
+                placeholder="xxxx xxxx xxxx xxxx",
+                key="ol_pass_input",
+            )
+            if ol_email:
+                st.session_state["outlook_email"] = ol_email
+            if ol_pass:
+                st.session_state["outlook_password"] = ol_pass
+
+            if st.button("🔑 Test Outlook Connection",
+                         disabled=not (st.session_state.get("outlook_email")
+                                       and st.session_state.get("outlook_password")),
+                         use_container_width=True):
+                try:
+                    with smtplib.SMTP("smtp.office365.com", 587) as srv:
+                        srv.ehlo()
+                        srv.starttls()
+                        srv.login(st.session_state["outlook_email"],
+                                  st.session_state["outlook_password"])
+                    st.success("✅ Outlook connection successful!")
+                except Exception as exc:
+                    st.error(f"Outlook error: {exc}")
+
+        st.divider()
         st.caption("AI EAP Lifecycle Coordinator v1.0")
         st.caption("Recommendations require human review before action.")
 
@@ -1307,10 +1468,57 @@ def main():
                     st.text_area(
                         "draft_email",
                         value=draft_em,
-                        height=420,
+                        height=380,
                         key=f"em_{idx}_{cust}",
                         label_visibility="collapsed",
                     )
+
+                    # ── Send / Share buttons ──────────────────
+                    btn1, btn2, btn3 = st.columns([2.5, 2.5, 3])
+
+                    with btn1:
+                        ol_ready = bool(st.session_state.get("outlook_email")
+                                        and st.session_state.get("outlook_password"))
+                        if st.button("📧 Send via Outlook",
+                                     key=f"ol_send_{idx}",
+                                     disabled=not ol_ready,
+                                     use_container_width=True,
+                                     help="Configure Outlook in the sidebar first." if not ol_ready else ""):
+                            to_addr = stakeholder if "@" in stakeholder else contact
+                            subject = extract_subject(draft_em)
+                            body    = "\n".join(
+                                line for line in draft_em.splitlines()
+                                if not line.lower().startswith("subject:")
+                            ).strip()
+                            try:
+                                send_via_outlook(
+                                    st.session_state["outlook_email"],
+                                    st.session_state["outlook_password"],
+                                    to_addr, subject, body,
+                                )
+                                st.success(f"✅ Sent to {to_addr}")
+                            except Exception as exc:
+                                st.error(f"Send failed: {exc}")
+
+                    with btn2:
+                        tm_ready = bool(HAS_REQUESTS
+                                        and st.session_state.get("teams_webhook"))
+                        if st.button("💬 Post to Teams",
+                                     key=f"tm_act_{idx}",
+                                     disabled=not tm_ready,
+                                     use_container_width=True,
+                                     help="Configure Teams webhook in the sidebar first." if not tm_ready else ""):
+                            try:
+                                post_action_to_teams(
+                                    st.session_state["teams_webhook"],
+                                    action.to_dict(),
+                                )
+                                st.success("✅ Posted to Teams!")
+                            except Exception as exc:
+                                st.error(f"Teams error: {exc}")
+
+                    with btn3:
+                        st.caption("Buttons activate after configuring integrations in the sidebar.")
                 else:
                     st.caption("No draft email generated for this action type.")
 
