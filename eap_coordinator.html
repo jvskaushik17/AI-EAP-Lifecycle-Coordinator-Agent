@@ -3,985 +3,1224 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>EAP Lifecycle Coordinator</title>
+<title>EAP Agent — AI Lifecycle Coordinator</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#eef2f7;color:#1a2340;line-height:1.5;min-height:100vh}
-a{color:inherit}
+:root{
+  --bg:#0f1117;--surface:#16192a;--card:#1c202f;--border:#252a3d;
+  --accent:#5b6cf9;--accent2:#7c8dfc;--ai:#9f7aea;--ai2:#b794f4;
+  --text:#e8eaf0;--muted:#7a82a0;--subtle:#4a5270;
+  --high:#f56565;--med:#f6a623;--low:#48bb78;--info:#4299e1;
+  --radius:10px;--shadow:0 2px 12px rgba(0,0,0,.35)
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+  background:var(--bg);color:var(--text);min-height:100vh;line-height:1.5}
 
-/* ── Banner ── */
-.banner{background:linear-gradient(90deg,#0d1b4b 0%,#1565c0 55%,#1976d2 100%);color:#fff;padding:20px 28px 16px;margin-bottom:22px}
-.banner h1{font-size:1.65em;font-weight:800;letter-spacing:-.3px;margin-bottom:3px}
-.banner p{opacity:.78;font-size:.88em}
-.container{max-width:1180px;margin:0 auto;padding:0 18px 48px}
+/* ── Layout ── */
+.shell{display:grid;grid-template-columns:300px 1fr;grid-template-rows:56px 1fr;min-height:100vh}
+.topbar{grid-column:1/-1;background:var(--surface);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 22px;gap:16px;z-index:10}
+.topbar-brand{font-size:1.1em;font-weight:800;background:linear-gradient(135deg,var(--accent2),var(--ai2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-.3px}
+.topbar-sub{font-size:.75em;color:var(--muted)}
+.topbar-spacer{flex:1}
+.ai-badge{display:flex;align-items:center;gap:7px;padding:5px 12px;border-radius:20px;
+  font-size:.76em;font-weight:600;border:1.5px solid var(--border);cursor:pointer;transition:.2s}
+.ai-badge:hover{border-color:var(--accent)}
+.ai-dot{width:8px;height:8px;border-radius:50%;background:#4a4a5a;transition:.3s}
+.ai-dot.on{background:var(--low);box-shadow:0 0 6px var(--low)}
+.ai-dot.checking{background:var(--med);animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 
-/* ── Upload card ── */
-.card{background:#fff;border:1px solid #e0e8f0;border-radius:12px;padding:22px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.05)}
-.drop-zone{border:2px dashed #b0c4de;border-radius:10px;padding:32px;text-align:center;cursor:pointer;transition:.18s}
-.drop-zone:hover,.drop-zone.over{border-color:#1565c0;background:#f0f6ff}
-.drop-zone h3{color:#1565c0;font-size:1.05em;margin-bottom:6px}
-.drop-zone p{color:#7a8db0;font-size:.87em}
-#file-input{display:none}
-.btn-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;justify-content:center}
+.sidebar{background:var(--surface);border-right:1px solid var(--border);
+  overflow-y:auto;padding:18px 16px;display:flex;flex-direction:column;gap:14px}
+.main{overflow-y:auto;padding:22px}
+
+/* ── Sidebar sections ── */
+.s-section{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px}
+.s-label{font-size:.68em;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);
+  font-weight:700;margin-bottom:10px}
+.s-row{display:flex;flex-direction:column;gap:5px;margin-bottom:9px}
+.s-row label{font-size:.77em;color:var(--muted)}
+.s-row select,.s-row input[type=text],.s-row input[type=number]{
+  width:100%;padding:7px 9px;background:var(--bg);border:1px solid var(--border);
+  border-radius:7px;color:var(--text);font-size:.82em;outline:none}
+.s-row select:focus,.s-row input:focus{border-color:var(--accent)}
+.s-row select option{background:var(--bg)}
 
 /* ── Buttons ── */
-.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 18px;border-radius:8px;font-size:.88em;font-weight:600;cursor:pointer;border:none;transition:.15s;white-space:nowrap}
-.btn-primary{background:#1565c0;color:#fff}.btn-primary:hover{background:#0d4fa0}
-.btn-ghost{background:#fff;color:#1565c0;border:1.5px solid #c5d5e8}.btn-ghost:hover{background:#f0f6ff}
-.btn-green{background:#2e7d32;color:#fff}.btn-green:hover{background:#1b5e20}
-.btn-sm{padding:5px 11px;font-size:.8em}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 16px;border-radius:8px;
+  font-size:.83em;font-weight:600;cursor:pointer;border:none;transition:.15s;white-space:nowrap}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover:not(:disabled){background:var(--accent2)}
+.btn-ai{background:var(--ai);color:#fff}.btn-ai:hover:not(:disabled){background:var(--ai2)}
+.btn-ghost{background:transparent;color:var(--text);border:1.5px solid var(--border)}
+.btn-ghost:hover:not(:disabled){border-color:var(--accent);color:var(--accent2)}
+.btn-danger{background:#c53030;color:#fff}.btn-danger:hover:not(:disabled){background:#e53e3e}
+.btn-sm{padding:4px 10px;font-size:.76em}
+.btn-xs{padding:3px 8px;font-size:.72em}
+.btn-block{width:100%;justify-content:center}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap}
 
-/* ── Metrics ── */
-.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
-.mbox{background:#fff;border:1px solid #e0e8f0;border-radius:10px;padding:14px 10px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.04)}
-.mbox .num{font-size:2.1em;font-weight:800;line-height:1.1}
-.mbox .lbl{font-size:.7em;text-transform:uppercase;color:#7a8db0;letter-spacing:.6px;margin-top:2px}
-
-/* ── Filters ── */
-.filter-bar{background:#fff;border:1px solid #e0e8f0;border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
-.filter-bar label{font-size:.76em;text-transform:uppercase;color:#7a8db0;font-weight:600;letter-spacing:.5px}
-.filter-bar select{border:1px solid #cdd8ea;border-radius:6px;padding:5px 9px;font-size:.86em;background:#fff}
-.filter-bar .spacer{flex:1}
-
-/* ── Action cards ── */
-.action-card{background:#fff;border:1px solid #e0e8f0;border-radius:10px;margin-bottom:9px;box-shadow:0 1px 3px rgba(0,0,0,.04);overflow:hidden}
-.card-hd{display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;user-select:none}
-.card-hd:hover{background:#fafbff}
-.card-hd .chev{margin-left:auto;font-size:.72em;color:#aab;transition:.2s}
-.card-hd.open .chev{transform:rotate(180deg)}
-.card-bd{display:none;padding:15px 16px;border-top:1px solid #edf0f7}
-.card-bd.open{display:block}
-.stripe-high{border-left:4px solid #ef5350}
-.stripe-medium{border-left:4px solid #ffa726}
-.stripe-low{border-left:4px solid #66bb6a}
-
-/* ── Badge ── */
-.badge{display:inline-flex;align-items:center;padding:2px 10px;border-radius:12px;font-size:.73em;font-weight:700;letter-spacing:.3px}
-.b-high{background:#fde8e8;color:#b71c1c;border:1px solid #ef9a9a}
-.b-med{background:#fff8e1;color:#e65100;border:1px solid #ffd54f}
-.b-low{background:#e8f5e9;color:#1b5e20;border:1px solid #a5d6a7}
-
-/* ── Info grid ── */
-.info-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:10px 0 12px}
-.ig .lbl{font-size:.69em;text-transform:uppercase;color:#8897b0;letter-spacing:.5px;font-weight:600}
-.ig .val{font-size:.88em;color:#1a2340;font-weight:500;margin-top:1px}
-.team-str{font-size:.76em;color:#9baabb;margin:2px 0 10px}
-.touch-line{font-size:.82em;font-weight:600;margin:4px 0 10px}
-.tw-red{color:#b71c1c}.tw-amber{color:#e65100}.tw-green{color:#1b5e20}
+/* ── Drop zone ── */
+.drop-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:22px 14px;
+  text-align:center;cursor:pointer;transition:.18s}
+.drop-zone:hover,.drop-zone.over{border-color:var(--accent);background:rgba(91,108,249,.06)}
+.drop-zone h4{color:var(--accent2);font-size:.9em;margin-bottom:4px}
+.drop-zone p{color:var(--muted);font-size:.76em}
+#file-input{display:none}
 
 /* ── Tabs ── */
-.tabs{display:flex;border-bottom:2px solid #edf0f7;margin-bottom:12px}
-.tab{padding:7px 15px;font-size:.84em;font-weight:600;cursor:pointer;border:none;background:none;color:#7a8db0;border-bottom:2px solid transparent;margin-bottom:-2px;transition:.15s}
-.tab:hover{color:#1565c0}
-.tab.on{color:#1565c0;border-bottom-color:#1565c0}
-.pane{display:none}
-.pane.on{display:block}
+.tabs{display:flex;border-bottom:1px solid var(--border);margin-bottom:18px;gap:2px}
+.tab{padding:9px 18px;font-size:.84em;font-weight:600;cursor:pointer;color:var(--muted);
+  border-bottom:2px solid transparent;transition:.15s;display:flex;align-items:center;gap:6px}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--accent2);border-bottom-color:var(--accent)}
+.tab-badge{background:var(--accent);color:#fff;border-radius:10px;padding:1px 6px;font-size:.72em;font-weight:700}
+.tab-content{display:none}.tab-content.active{display:block}
 
-/* ── Draft textarea ── */
-.draft-note{font-size:.76em;color:#9baabb;margin-bottom:5px}
-textarea.draft{width:100%;border:1px solid #cdd8ea;border-radius:8px;padding:11px;font-size:.86em;line-height:1.65;resize:vertical;font-family:inherit;color:#1a2340;background:#fafbff}
-textarea.jira{font-family:'Courier New',monospace;font-size:.8em;min-height:380px}
-textarea.email{min-height:320px}
-.copy-row{display:flex;gap:8px;margin-top:8px}
+/* ── Metrics ── */
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
+.mbox{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:14px 10px;text-align:center}
+.mbox .num{font-size:2em;font-weight:800;line-height:1.1}
+.mbox .lbl{font-size:.68em;text-transform:uppercase;color:var(--muted);letter-spacing:.5px;margin-top:3px}
+.c-high{color:var(--high)}.c-med{color:var(--med)}.c-low{color:var(--low)}.c-ai{color:var(--ai)}
 
-/* ── Paste analysis ── */
-.paste-card{margin-bottom:16px}
-.paste-card summary{cursor:pointer;font-weight:600;font-size:.95em;color:#1565c0;padding:4px 0}
-.paste-card details{background:#fff;border:1px solid #e0e8f0;border-radius:10px;padding:14px 16px}
-.paste-card textarea{width:100%;height:110px;border:1px solid #cdd8ea;border-radius:8px;padding:10px;font-size:.87em;resize:vertical;margin:8px 0}
-#signal-out{background:#f0f6ff;border-left:4px solid #1565c0;border-radius:6px;padding:10px 14px;font-size:.87em;display:none;margin-top:8px;white-space:pre-wrap}
+/* ── Filter bar ── */
+.filter-bar{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:10px 14px;margin-bottom:14px;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.filter-bar label{font-size:.72em;text-transform:uppercase;color:var(--muted);font-weight:700;letter-spacing:.5px}
+.filter-bar select{background:var(--bg);border:1px solid var(--border);border-radius:6px;
+  padding:5px 8px;font-size:.82em;color:var(--text);outline:none}
+.filter-spacer{flex:1}
 
-/* ── Empty state ── */
-#empty{text-align:center;padding:64px 20px;color:#9baabb}
-#empty .ico{font-size:3.2em;margin-bottom:14px}
-#empty h3{color:#546;font-size:1.1em;margin-bottom:8px}
-#empty p{font-size:.88em}
+/* ── Action cards ── */
+.action-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  margin-bottom:8px;overflow:hidden;transition:.15s}
+.action-card:hover{border-color:var(--subtle)}
+.card-hd{display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;user-select:none}
+.card-hd:hover{background:rgba(255,255,255,.025)}
+.stripe{width:4px;height:36px;border-radius:3px;flex-shrink:0}
+.stripe-high{background:var(--high)}
+.stripe-med{background:var(--med)}
+.stripe-low{background:var(--low)}
+.priority-badge{font-size:.68em;font-weight:700;padding:2px 8px;border-radius:5px;letter-spacing:.4px}
+.p-HIGH{background:rgba(245,101,101,.18);color:var(--high)}
+.p-MEDIUM{background:rgba(246,166,35,.18);color:var(--med)}
+.p-LOW{background:rgba(72,187,120,.18);color:var(--low)}
+.card-name{font-weight:700;font-size:.9em;flex:1;min-width:0}
+.card-meta{font-size:.76em;color:var(--muted);white-space:nowrap}
+.chev{margin-left:6px;font-size:.7em;color:var(--subtle);transition:.2s;flex-shrink:0}
+.open .chev{transform:rotate(90deg)}
+.ai-tag{font-size:.68em;padding:2px 7px;border-radius:5px;background:rgba(159,122,234,.2);
+  color:var(--ai2);font-weight:600;letter-spacing:.3px}
 
-.section-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
-.section-hd h2{font-size:1em;font-weight:700}
-hr.divider{border:none;border-top:1px solid #edf0f7;margin:10px 0}
-.footer{text-align:center;font-size:.76em;color:#aab;margin-top:28px}
+.card-body{display:none;padding:0 14px 14px}
+.open .card-body{display:block}
+.ctabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:12px}
+.ctab{font-size:.76em;font-weight:600;padding:6px 13px;cursor:pointer;color:var(--muted);
+  border-bottom:2px solid transparent;transition:.15s}
+.ctab.active{color:var(--accent2);border-bottom-color:var(--accent)}
+.ctab-content{display:none}.ctab-content.active{display:block}
 
-@media(max-width:700px){
-.metrics{grid-template-columns:1fr 1fr}
-.info-grid{grid-template-columns:1fr 1fr}
-.filter-bar{flex-direction:column;align-items:flex-start}
-}
+.evidence-block{background:var(--bg);border:1px solid var(--border);border-radius:8px;
+  padding:10px 12px;font-size:.81em;line-height:1.6;margin-bottom:10px}
+.evidence-block .ev-label{font-size:.7em;text-transform:uppercase;letter-spacing:.5px;
+  color:var(--muted);font-weight:700;margin-bottom:5px}
+.evidence-block p{color:var(--text)}
+.evidence-block blockquote{border-left:3px solid var(--accent);padding-left:9px;
+  color:var(--muted);font-style:italic;margin-top:6px}
+
+.text-area-wrap{position:relative}
+.draft-area{width:100%;min-height:140px;background:var(--bg);border:1px solid var(--border);
+  border-radius:8px;padding:10px 12px;font-size:.81em;line-height:1.65;color:var(--text);
+  resize:vertical;font-family:inherit;outline:none}
+.draft-area:focus{border-color:var(--accent)}
+.copy-btn{position:absolute;top:8px;right:8px}
+.ai-gen-btn{margin-top:6px}
+
+/* ── Agent chat ── */
+.chat-wrap{display:flex;flex-direction:column;height:calc(100vh - 200px);min-height:400px}
+.chat-messages{flex:1;overflow-y:auto;padding:12px 0;display:flex;flex-direction:column;gap:10px}
+.chat-msg{padding:10px 14px;border-radius:var(--radius);max-width:90%;font-size:.85em;line-height:1.6}
+.chat-msg.user{background:var(--accent);color:#fff;align-self:flex-end;border-bottom-right-radius:3px}
+.chat-msg.agent{background:var(--card);border:1px solid var(--border);align-self:flex-start;
+  border-bottom-left-radius:3px}
+.chat-msg.agent .agent-icon{font-size:.8em;color:var(--ai2);font-weight:700;margin-bottom:4px}
+.chat-msg.system{background:rgba(159,122,234,.1);border:1px solid rgba(159,122,234,.25);
+  align-self:stretch;border-radius:8px;font-size:.78em;color:var(--muted);text-align:center}
+.chat-input-row{display:flex;gap:9px;padding-top:12px;border-top:1px solid var(--border);margin-top:auto}
+.chat-input{flex:1;background:var(--card);border:1px solid var(--border);border-radius:9px;
+  padding:10px 14px;color:var(--text);font-size:.85em;font-family:inherit;resize:none;
+  outline:none;min-height:44px;max-height:120px}
+.chat-input:focus{border-color:var(--accent)}
+.thinking-dots::after{content:'...';animation:dots 1.2s steps(4,end) infinite}
+@keyframes dots{0%,20%{content:'.'}40%{content:'..'}60%,100%{content:'...'}}
+
+/* ── Log ── */
+.log-entry{display:flex;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);
+  font-size:.8em;align-items:flex-start}
+.log-entry:last-child{border-bottom:none}
+.log-entry .log-icon{font-size:1em;flex-shrink:0;margin-top:1px}
+.log-entry .log-time{color:var(--muted);white-space:nowrap;font-size:.9em;flex-shrink:0}
+.log-entry .log-text{flex:1;color:var(--text);line-height:1.5}
+.log-entry .log-text .log-sub{color:var(--muted);font-size:.9em;margin-top:2px}
+.log-box{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  overflow:hidden;max-height:600px;overflow-y:auto}
+
+/* ── Status table ── */
+.status-table{width:100%;border-collapse:collapse;font-size:.8em}
+.status-table th{background:var(--card);color:var(--muted);font-size:.72em;text-transform:uppercase;
+  letter-spacing:.5px;padding:9px 11px;text-align:left;border-bottom:1px solid var(--border);
+  white-space:nowrap}
+.status-table td{padding:8px 11px;border-bottom:1px solid var(--border);vertical-align:middle}
+.status-table tr:hover td{background:rgba(255,255,255,.02)}
+.yes-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--low)}
+.no-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--subtle)}
+.days-warn{color:var(--high);font-weight:700}
+.days-ok{color:var(--muted)}
+
+/* ── Paste analyze ── */
+.analyze-area{width:100%;min-height:160px;background:var(--card);border:1px solid var(--border);
+  border-radius:var(--radius);padding:12px;color:var(--text);font-size:.85em;
+  font-family:inherit;resize:vertical;outline:none}
+.analyze-area:focus{border-color:var(--accent)}
+.analyze-result{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:14px;margin-top:12px;font-size:.85em}
+.analyze-result h4{font-size:.85em;font-weight:700;margin-bottom:8px;color:var(--accent2)}
+.analyze-result .ar-row{display:flex;gap:10px;margin-bottom:5px}
+.analyze-result .ar-label{color:var(--muted);font-size:.9em;min-width:110px}
+.analyze-result .ar-val{color:var(--text);font-size:.9em}
+
+/* ── Status indicators ── */
+.setup-notice{background:rgba(159,122,234,.1);border:1px solid rgba(159,122,234,.3);
+  border-radius:var(--radius);padding:14px;font-size:.83em;line-height:1.6}
+.setup-notice h4{color:var(--ai2);font-weight:700;margin-bottom:6px}
+.setup-notice code{background:rgba(0,0,0,.3);padding:2px 6px;border-radius:4px;font-size:.9em}
+
+/* ── Agent cycle status ── */
+.cycle-bar{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;font-size:.82em}
+.cycle-bar .cb-label{color:var(--muted);flex:1}
+.cycle-bar .cb-status{color:var(--ai2);font-weight:600}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 </style>
 </head>
 <body>
+<div class="shell">
 
-<div class="banner">
-  <h1>🚀 EAP Lifecycle Coordinator</h1>
-  <p>No setup · No API keys · No Python · Open this file and go</p>
-</div>
-
-<div class="container">
-
-<!-- Upload -->
-<div class="card">
-  <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
-    <div style="font-size:2em;margin-bottom:8px">📂</div>
-    <h3>Drop your EAP CSV or Excel file here</h3>
-    <p>or click to browse &nbsp;·&nbsp; CSV / XLSX / XLS accepted</p>
+<!-- ── Top bar ── -->
+<header class="topbar">
+  <div>
+    <div class="topbar-brand">⚡ EAP Agent</div>
+    <div class="topbar-sub">AI-powered EAP Lifecycle Coordinator</div>
   </div>
-  <input type="file" id="file-input" accept=".csv,.xlsx,.xls">
-  <div class="btn-row">
-    <button class="btn btn-ghost" onclick="loadSample()">📋 Load Sample Data (12 customers)</button>
-    <button class="btn btn-ghost" onclick="downloadTemplate()">⬇️ Download Blank Template</button>
-    <button class="btn btn-green" id="export-csv-btn" onclick="exportCSV()" style="display:none">⬇️ Export Action Queue</button>
-    <button class="btn btn-green" id="export-drafts-btn" onclick="exportDrafts()" style="display:none">⬇️ Export All Drafts</button>
+  <div class="topbar-spacer"></div>
+  <div class="ai-badge" onclick="openAISettings()" title="AI engine settings">
+    <div class="ai-dot" id="ai-dot"></div>
+    <span id="ai-label">Checking AI…</span>
   </div>
-</div>
+  <button class="btn btn-ai btn-sm" id="run-cycle-btn" onclick="runAgentCycle()" disabled>▶ Run Agent</button>
+  <button class="btn btn-ghost btn-sm" onclick="stopAgent()" id="stop-btn" style="display:none">■ Stop</button>
+</header>
 
-<!-- Paste & Analyze -->
-<div class="paste-card">
-  <details>
-    <summary>📋 Paste an email or Teams message — detect signals instantly (no API needed)</summary>
-    <p style="font-size:.84em;color:#7a8db0;margin:8px 0">Paste any email or Teams message. The tool detects EAP signals and tells you what to update and do next.</p>
-    <textarea id="paste-in" placeholder="Paste email body or Teams message here…"></textarea>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-primary btn-sm" onclick="analyzeText()">🔍 Analyze Text</button>
-      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('paste-in').value='';document.getElementById('signal-out').style.display='none'">Clear</button>
+<!-- ── Sidebar ── -->
+<aside class="sidebar">
+
+  <!-- AI engine -->
+  <div class="s-section" id="ai-settings-section">
+    <div class="s-label">🤖 AI Engine (Ollama)</div>
+    <div class="s-row">
+      <label>Model</label>
+      <select id="model-select">
+        <option value="">— detecting —</option>
+      </select>
     </div>
-    <div id="signal-out"></div>
-  </details>
-</div>
+    <div class="s-row">
+      <label>Ollama URL</label>
+      <input type="text" id="ollama-url" value="http://localhost:11434" placeholder="http://localhost:11434">
+    </div>
+    <button class="btn btn-ghost btn-sm btn-block" onclick="connectOllama()">↻ Reconnect</button>
+    <div id="ollama-status" style="font-size:.74em;color:var(--muted);margin-top:8px;text-align:center"></div>
+  </div>
 
-<!-- Metrics -->
-<div class="metrics" id="metrics" style="display:none">
-  <div class="mbox"><div class="num" id="m-total" style="color:#1565c0">0</div><div class="lbl">Total Actions</div></div>
-  <div class="mbox"><div class="num" id="m-high"  style="color:#b71c1c">0</div><div class="lbl">High Priority</div></div>
-  <div class="mbox"><div class="num" id="m-med"   style="color:#e65100">0</div><div class="lbl">Medium</div></div>
-  <div class="mbox"><div class="num" id="m-low"   style="color:#1b5e20">0</div><div class="lbl">Low</div></div>
-</div>
+  <!-- Auto-cycle -->
+  <div class="s-section">
+    <div class="s-label">⏱ Auto-Scan</div>
+    <div class="s-row">
+      <label>Interval (minutes)</label>
+      <input type="number" id="poll-interval" value="5" min="1" max="60">
+    </div>
+    <div style="display:flex;gap:7px">
+      <button class="btn btn-primary btn-sm" style="flex:1" onclick="startAutoCycle()">Start</button>
+      <button class="btn btn-ghost btn-sm" style="flex:1" onclick="stopAutoCycle()">Stop</button>
+    </div>
+    <div id="cycle-status-text" style="font-size:.73em;color:var(--muted);margin-top:7px;text-align:center">Not running</div>
+  </div>
 
-<!-- Filters -->
-<div class="filter-bar" id="filter-bar" style="display:none">
-  <label>EAP</label>
-  <select id="f-eap" onchange="renderQueue()"><option value="">All</option></select>
-  <label>Priority</label>
-  <select id="f-pri" onchange="renderQueue()">
-    <option value="">All</option><option>High</option><option>Medium</option><option>Low</option>
-  </select>
-  <label>Action</label>
-  <select id="f-action" onchange="renderQueue()"><option value="">All</option></select>
-  <div class="spacer"></div>
-  <div id="queue-count" style="font-size:.82em;color:#9baabb"></div>
-</div>
+  <!-- Data import -->
+  <div class="s-section">
+    <div class="s-label">📂 EAP Data</div>
+    <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()"
+      ondragover="dz(event,'over')" ondragleave="dz(event,'leave')" ondrop="dz(event,'drop')">
+      <h4>Drop CSV / Excel</h4>
+      <p>or click to browse</p>
+    </div>
+    <input type="file" id="file-input" accept=".csv,.xlsx,.xls" onchange="loadFile(this.files[0])">
+    <div class="btn-row" style="margin-top:9px;justify-content:center">
+      <button class="btn btn-ghost btn-sm" onclick="loadSample()">Load sample data</button>
+      <button class="btn btn-ghost btn-sm" onclick="exportCSV()">Export CSV</button>
+    </div>
+  </div>
 
-<!-- Queue -->
-<div class="section-hd" id="queue-hd" style="display:none">
-  <h2>🗂 Action Queue</h2>
-</div>
-<div id="queue"></div>
+  <!-- Filters -->
+  <div class="s-section">
+    <div class="s-label">🔍 Filters</div>
+    <div class="s-row">
+      <label>EAP Program</label>
+      <select id="f-eap" onchange="applyFilters()"><option value="">All EAPs</option></select>
+    </div>
+    <div class="s-row">
+      <label>Priority</label>
+      <select id="f-pri" onchange="applyFilters()">
+        <option value="">All</option>
+        <option>HIGH</option><option>MEDIUM</option><option>LOW</option>
+      </select>
+    </div>
+    <div class="s-row">
+      <label>Action type</label>
+      <select id="f-act" onchange="applyFilters()"><option value="">All actions</option></select>
+    </div>
+  </div>
 
-<!-- Empty -->
-<div id="empty">
-  <div class="ico">📋</div>
-  <h3>Load your EAP data to get started</h3>
-  <p>Upload a CSV, click Load Sample Data, or paste an email above.</p>
-</div>
+</aside>
 
-<div class="footer">EAP Lifecycle Coordinator &nbsp;·&nbsp; No API keys &nbsp;·&nbsp; No server &nbsp;·&nbsp; All data stays in your browser</div>
-</div><!-- /container -->
+<!-- ── Main ── -->
+<main class="main">
+
+  <!-- Metrics -->
+  <div class="metrics" id="metrics">
+    <div class="mbox"><div class="num" id="m-total">—</div><div class="lbl">Customers</div></div>
+    <div class="mbox"><div class="num c-high" id="m-high">—</div><div class="lbl">High Priority</div></div>
+    <div class="mbox"><div class="num c-med" id="m-med">—</div><div class="lbl">Medium</div></div>
+    <div class="mbox"><div class="num c-ai" id="m-ai">—</div><div class="lbl">AI Insights</div></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('queue')">📋 Action Queue <span class="tab-badge" id="queue-badge">0</span></div>
+    <div class="tab" onclick="showTab('chat')">💬 Chat with Agent</div>
+    <div class="tab" onclick="showTab('analyze')">🔍 Paste & Analyze</div>
+    <div class="tab" onclick="showTab('status')">📊 EAP Status</div>
+    <div class="tab" onclick="showTab('log')">📜 Agent Log</div>
+  </div>
+
+  <!-- Queue tab -->
+  <div class="tab-content active" id="tab-queue">
+    <div class="cycle-bar" id="cycle-bar" style="display:none">
+      <div class="ai-dot checking" id="cycle-dot"></div>
+      <div class="cb-label" id="cycle-label">Agent is running…</div>
+      <div class="cb-status" id="cycle-counter"></div>
+    </div>
+    <div id="queue-list"><div style="text-align:center;padding:40px;color:var(--muted);font-size:.9em">
+      Load your EAP data to see the action queue.<br>
+      <span style="font-size:.85em">Click "Load sample data" in the sidebar to start.</span>
+    </div></div>
+  </div>
+
+  <!-- Chat tab -->
+  <div class="tab-content" id="tab-chat">
+    <div class="chat-wrap">
+      <div class="chat-messages" id="chat-messages">
+        <div class="chat-msg system">
+          Agent ready. Ask me anything about your EAP customers — status updates, who needs follow-up, draft emails, insights.
+        </div>
+      </div>
+      <div class="chat-input-row">
+        <textarea class="chat-input" id="chat-input" placeholder="Ask the agent…  (Shift+Enter for newline, Enter to send)"
+          onkeydown="chatKey(event)" rows="1"></textarea>
+        <button class="btn btn-ai" id="chat-send-btn" onclick="sendChat()">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Paste & Analyze tab -->
+  <div class="tab-content" id="tab-analyze">
+    <div style="margin-bottom:14px">
+      <p style="font-size:.85em;color:var(--muted);margin-bottom:10px">
+        Paste any email, Teams message, or Slack message. The AI agent will extract signals,
+        match customers, and recommend actions.
+      </p>
+      <textarea class="analyze-area" id="analyze-input" placeholder="Paste email or message here…"></textarea>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn btn-ai" onclick="analyzeText()">🤖 AI Analyze</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('analyze-input').value=''">Clear</button>
+      </div>
+    </div>
+    <div id="analyze-result"></div>
+  </div>
+
+  <!-- Status tab -->
+  <div class="tab-content" id="tab-status">
+    <div style="overflow-x:auto">
+      <table class="status-table" id="status-table">
+        <thead><tr>
+          <th>Customer</th><th>Company</th><th>EAP</th><th>Priority</th>
+          <th>Stage</th><th>Days Since Touch</th><th>Build</th><th>Testing</th><th>Feedback</th>
+        </tr></thead>
+        <tbody id="status-body"><tr><td colspan="9" style="color:var(--muted);text-align:center;padding:20px">No data loaded</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Log tab -->
+  <div class="tab-content" id="tab-log">
+    <div style="display:flex;gap:9px;margin-bottom:12px">
+      <button class="btn btn-ghost btn-sm" onclick="clearLog()">Clear log</button>
+      <input type="text" id="log-search" placeholder="Search log…" oninput="renderLog()"
+        style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:7px;
+        padding:6px 11px;color:var(--text);font-size:.82em;outline:none">
+    </div>
+    <div class="log-box" id="log-box"></div>
+  </div>
+
+</main>
+</div><!-- /shell -->
 
 <script>
-// ══════════════════════════════════════════════════════════
-// DATA
-// ══════════════════════════════════════════════════════════
-let allActions = [];
-let rawRows    = [];
+// ══════════════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════════════
+const S = {
+  customers: [],
+  actions: [],
+  log: [],
+  aiInsights: 0,
+  ollamaOk: false,
+  ollamaModels: [],
+  agentTimer: null,
+  agentRunning: false,
+  chatHistory: []
+};
 
-const SAMPLE_CSV = `"EAP Name","Customer Name","Customer Contact","Customer Time Zone","AM Name","AM Email","SE Name","SE Email","PM Name","PM Email","Feature Requested","Current Stage","Customer Interest Status","Kickoff Scheduled Date","Kickoff Completed","Registration Completed","Onboarding Scheduled Date","Onboarding Completed","Build Shared","Build Downloaded / Installed","Product Actively Testing","Feedback Session Scheduled Date","Feedback Received","Jira Ticket Created","Jira Ticket ID","Jira Status","PM/Engineering Last Update Date","Customer Updated","Close-Out Email Sent","Survey Sent","Last Customer Touchpoint Date","Notes / Evidence"
-"DNS Security EAP","Acme Corporation","j.smith@acme.com","PST","Sarah Johnson","s.johnson@infoblox.com","Mark Chen","m.chen@infoblox.com","Lisa Park","l.park@infoblox.com","Advanced DNS Filtering","Active Testing","Agreed","2026-04-20","Yes","Yes","2026-04-27","Yes","Yes","Yes","Yes","","No","No","","","","No","No","No","2026-05-25","Customer confirmed active testing on 5/25. Reported minor DNS latency on custom RPZ policies - not blocking. Asked about bulk import for threat feeds."
-"DNS Security EAP","TechStart Inc","r.patel@techstart.io","EST","Sarah Johnson","s.johnson@infoblox.com","Amy Torres","a.torres@infoblox.com","Lisa Park","l.park@infoblox.com","Advanced DNS Filtering","Build Installation Follow-Up","Agreed","2026-04-18","Yes","Yes","2026-04-25","Yes","Yes","No","No","","No","No","","","","No","No","No","2026-05-20","Build package sent 5/5. No download confirmation. AM called 5/20 - no response. IT team may be the blocker."
-"DNS Security EAP","GlobalNet Systems","k.anderson@globalnet.com","CST","David Kim","d.kim@infoblox.com","Priya Singh","p.singh@infoblox.com","Lisa Park","l.park@infoblox.com","Advanced DNS Filtering","Feedback Collection","Agreed","2026-04-15","Yes","Yes","2026-04-22","Yes","Yes","Yes","Yes","2026-05-22","Yes","No","","","","No","No","No","2026-05-28","Feedback session 5/28. Customer reported DNS resolution delays with RPZ under heavy load. Requested bulk import for threat feeds. Strong case study candidate."
-"BloxOne Threat Defense EAP","DataSystems Corp","m.williams@datasystems.com","MST","Carlos Reyes","c.reyes@infoblox.com","Jin Park","j.park@infoblox.com","Tom Bradley","t.bradley@infoblox.com","Threat Intelligence Integration","Registration Follow-Up","Agreed","2026-05-10","Yes","No","","No","No","No","No","","No","No","","","","No","No","No","2026-05-29","Kickoff completed 5/10. Registration link sent but not completed. IT procurement approval may be causing delay."
-"BloxOne Threat Defense EAP","SecureBank Financial","a.chen@securebank.com","EST","Carlos Reyes","c.reyes@infoblox.com","Rebecca Moore","r.moore@infoblox.com","Tom Bradley","t.bradley@infoblox.com","SOC Integration APIs","Onboarding Scheduling","Agreed","","No","Yes","","No","No","No","No","","No","No","","","","No","No","No","2026-06-01","Registration completed 6/1. Customer ready for technical onboarding. Prefers morning EST slots."
-"BloxOne Threat Defense EAP","RetailCo Inc","s.brown@retailco.com","PST","Carlos Reyes","c.reyes@infoblox.com","Jin Park","j.park@infoblox.com","Tom Bradley","t.bradley@infoblox.com","","Recruitment","Potential","","No","No","","No","No","No","No","","No","No","","","","No","No","No","2026-05-15","AM flagged RetailCo as strong candidate from QBR. General interest in threat defense automation. No EAP outreach yet."
-"NIOS 9.0 Beta EAP","Manufacturing Inc","t.johnson@mfginc.com","CST","Linda Wu","l.wu@infoblox.com","Alex Rivera","a.rivera@infoblox.com","Raj Patel","r.patel@infoblox.com","NIOS Upgrade Automation","Recruitment","Potential","","No","No","","No","No","No","No","","No","No","","","","No","No","No","2026-05-30","SE flagged from discovery call. Customer on NIOS 8.5, interested in automation. AM/SE coordination needed before outreach."
-"NIOS 9.0 Beta EAP","TelecomGiant Corp","b.davis@telecomgiant.com","PST","Linda Wu","l.wu@infoblox.com","Alex Rivera","a.rivera@infoblox.com","Raj Patel","r.patel@infoblox.com","Grid Automation APIs","PM/Engineering Follow-Up","Agreed","2026-03-28","Yes","Yes","2026-04-05","Yes","Yes","Yes","Yes","2026-04-28","Yes","Yes","EAP-2847","In Progress","2026-05-07","No","No","No","2026-05-10","Jira EAP-2847 created for Grid Automation API improvements. PM last update 5/7 - 27 days ago. Customer asking for status via AM."
-"NIOS 9.0 Beta EAP","EnterpriseHQ Ltd","c.taylor@enterprisehq.com","GMT","Linda Wu","l.wu@infoblox.com","Maria Santos","m.santos@infoblox.com","Raj Patel","r.patel@infoblox.com","DDI Integration Framework","Close-Out","Agreed","2026-03-15","Yes","Yes","2026-03-22","Yes","Yes","Yes","Yes","2026-04-15","Yes","Yes","EAP-2791","Resolved","2026-05-01","Yes","No","No","2026-05-20","Full EAP cycle complete. Jira EAP-2791 resolved, customer updated 5/20. Close-out email and CSAT not yet sent. Strong case study potential."
-"NIOS 9.0 Beta EAP","StartupTech Solutions","p.nguyen@startuptech.io","PST","Linda Wu","l.wu@infoblox.com","Maria Santos","m.santos@infoblox.com","Raj Patel","r.patel@infoblox.com","Cloud-Native DDI","Customer Update","Agreed","2026-04-01","Yes","Yes","2026-04-10","Yes","Yes","Yes","Yes","2026-05-05","Yes","Yes","EAP-2831","Resolved","2026-05-25","No","No","No","2026-05-10","Jira EAP-2831 resolved 5/25. Engineering added IPv6 support and improved API rate limits. Customer not yet notified."
-"Cloud Services EAP","MidwestHealth Systems","e.garcia@midwesthealth.org","CST","James Wilson","j.wilson@infoblox.com","Chris Lee","c.lee@infoblox.com","Jennifer Cho","j.cho@infoblox.com","Cloud DNS Automation","Kickoff Scheduling","Agreed","","No","No","","No","No","No","No","","No","No","","","","No","No","No","2026-06-02","Customer confirmed participation 6/2. Prefers afternoon CST. IT stakeholder will also join."
-"Cloud Services EAP","Pacific Retail Group","n.park@pacificretail.com","PST","James Wilson","j.wilson@infoblox.com","Chris Lee","c.lee@infoblox.com","Jennifer Cho","j.cho@infoblox.com","Hybrid Cloud DNS Management","Recruitment","Potential","","No","No","","No","No","No","No","","No","No","","","","No","No","No","2026-06-01","SE identified from discovery call 6/1. Interested in hybrid DNS across on-prem and cloud. AM outreach not yet sent."`;
+// ══════════════════════════════════════════════════════════════════
+// OLLAMA
+// ══════════════════════════════════════════════════════════════════
+function ollamaURL() { return (document.getElementById('ollama-url').value||'http://localhost:11434').replace(/\/$/,''); }
+function activeModel() { return document.getElementById('model-select').value; }
 
-// ══════════════════════════════════════════════════════════
-// CSV PARSER
-// ══════════════════════════════════════════════════════════
-function parseCSV(text) {
-  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const rows = [];
-  let cur = '', inQ = false;
-  const fields = [];
-  const pushField = () => { fields.push(cur.trim()); cur = ''; };
-
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (c === '"') { inQ = !inQ; continue; }
-    if (c === ',' && !inQ) { pushField(); continue; }
-    if (c === '\n' && !inQ) { pushField(); rows.push([...fields]); fields.length = 0; continue; }
-    cur += c;
+async function checkOllama() {
+  setAIStatus('checking');
+  try {
+    const r = await fetch(ollamaURL()+'/api/tags', {signal: AbortSignal.timeout(4000)});
+    if (!r.ok) throw new Error('not ok');
+    const d = await r.json();
+    const models = (d.models||[]).map(m=>m.name).filter(n=>n);
+    S.ollamaModels = models;
+    S.ollamaOk = models.length > 0;
+    populateModels(models);
+    setAIStatus(S.ollamaOk ? 'on' : 'nomodel');
+    addLog('🤖','AI','Ollama connected — '+models.length+' model(s) available', models.join(', ')||'(none)');
+    return true;
+  } catch(e) {
+    S.ollamaOk = false;
+    setAIStatus('off');
+    document.getElementById('ollama-status').textContent = 'Not found — see setup below';
+    addLog('⚠️','AI','Ollama not reachable at '+ollamaURL(),'Install Ollama and run: ollama pull llama3.2');
+    return false;
   }
-  pushField();
-  if (fields.some(f => f)) rows.push([...fields]);
+}
 
-  if (rows.length < 2) return [];
-  const headers = rows[0];
-  return rows.slice(1).filter(r => r.some(v => v)).map(r => {
-    const obj = {};
-    headers.forEach((h, i) => { obj[h] = (r[i] || '').trim(); });
-    return obj;
+async function connectOllama() {
+  document.getElementById('ollama-status').textContent = 'Connecting…';
+  const ok = await checkOllama();
+  document.getElementById('ollama-status').textContent = ok ? 'Connected ✓' : 'Failed — is Ollama running?';
+}
+
+function populateModels(models) {
+  const sel = document.getElementById('model-select');
+  const prev = sel.value;
+  sel.innerHTML = models.length === 0
+    ? '<option value="">No models found — run: ollama pull llama3.2</option>'
+    : models.map(m=>`<option value="${m}"${m===prev?' selected':''}>${m}</option>`).join('');
+  if (!prev && models.length) sel.value = models[0];
+  document.getElementById('run-cycle-btn').disabled = !S.ollamaOk;
+}
+
+function setAIStatus(state) {
+  const dot = document.getElementById('ai-dot');
+  const lbl = document.getElementById('ai-label');
+  dot.className = 'ai-dot';
+  if (state==='on')         { dot.classList.add('on'); lbl.textContent = activeModel()||'AI Ready'; }
+  else if (state==='checking'){ dot.classList.add('checking'); lbl.textContent = 'Checking AI…'; }
+  else if (state==='nomodel') { lbl.textContent = 'No models — pull one'; }
+  else                       { lbl.textContent = 'Ollama offline'; }
+}
+
+async function ollamaChat(system, userMsg, json=false) {
+  const model = activeModel();
+  if (!model) throw new Error('No model selected');
+  const body = {
+    model,
+    messages: [{role:'system',content:system},{role:'user',content:userMsg}],
+    stream: false
+  };
+  if (json) body.format = 'json';
+  const r = await fetch(ollamaURL()+'/api/chat', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(90000)
   });
+  if (!r.ok) throw new Error('Ollama error '+r.status);
+  const d = await r.json();
+  return d.message?.content || '';
 }
 
-// ══════════════════════════════════════════════════════════
-// UTILITIES
-// ══════════════════════════════════════════════════════════
-const g = (row, key) => (row[key] || '').trim();
-const isY = (row, key) => ['yes','true','1','y'].includes(g(row,key).toLowerCase());
-const hasV = (row, key) => g(row,key) !== '';
-
-function daysSince(row, key) {
-  const v = g(row, key);
-  if (!v) return 9999;
-  const d = new Date(v);
-  if (isNaN(d)) return 9999;
-  return Math.max(0, Math.floor((Date.now() - d) / 86400000));
-}
-
-function fName(full) {
-  if (!full || full === '—') return 'there';
-  return full.trim().split(' ')[0];
-}
-
-function contactFName(s) {
-  if (!s) return 'there';
-  if (s.includes('@')) {
-    const local = s.split('@')[0].replace(/[._-]/g,' ').trim().split(' ');
-    return local[0] ? local[0][0].toUpperCase() + local[0].slice(1) : 'there';
-  }
-  return fName(s);
-}
-
-function sig(amName, amEmail) {
-  return `\nBest regards,\n${amName || '[Your Name]'}\n${amEmail && amEmail !== '—' ? amEmail + '\n' : ''}Infoblox`;
-}
-
-// ══════════════════════════════════════════════════════════
-// EMAIL GENERATORS
-// ══════════════════════════════════════════════════════════
-function genEmail(type, row) {
-  const eap=g(row,'EAP Name'), cust=g(row,'Customer Name'), contact=g(row,'Customer Contact');
-  const am=g(row,'AM Name'), ame=g(row,'AM Email'), se=g(row,'SE Name'), see=g(row,'SE Email');
-  const pm=g(row,'PM Name'), pme=g(row,'PM Email'), feat=g(row,'Feature Requested');
-  const tz=g(row,'Customer Time Zone')||'your time zone', notes=g(row,'Notes / Evidence');
-  const fn=contactFName(contact), fnam=fName(am), fse=fName(se), fpm=fName(pm);
-  const jira=g(row,'Jira Ticket ID'), jst=g(row,'Jira Status');
-
-  switch(type) {
-    case 'direct_recruitment': return `Subject: Exclusive Invitation — ${eap} Early Access Program
-
-Hi ${fn},
-
-I hope you're doing well. I'm reaching out because we're launching the ${eap} and believe ${cust} would be an outstanding early access partner.
-
-Based on your team's Infoblox footprint and strategic goals, this program is built for organizations like yours — those who want to influence what ships before general availability.
-
-What you get as an EAP participant:
-• Early access to ${feat||'new capabilities'} in a pre-GA environment
-• Direct input into the product roadmap through structured feedback sessions
-• Dedicated support from our Product and Solutions Engineering teams
-• Recognition as a Design Partner upon program completion
-
-What we ask of you:
-• A 30-minute kickoff call to align on goals and timeline
-• 4–6 weeks of testing in your environment
-• One structured feedback session with our product team
-
-I'd love to schedule a quick 20-minute overview call this week. Would morning or afternoon work best for you (${tz})?
-
-Looking forward to the conversation.${sig(am,ame)}`;
-
-    case 'am_se_outreach': return `Subject: [EAP Candidate] ${cust} — ${eap} — Your Input Needed
-
-Hi ${fse},
-
-I wanted to flag ${cust} as a strong candidate for the ${eap} and loop you in before we send formal outreach.
-
-Customer: ${cust}
-Primary Contact: ${contact}
-Feature Interest: ${feat||'TBD'}
-Background: ${notes||'See CRM notes.'}
-
-Before I send the recruitment email, I'd like your input on:
-1. Technical fit — does ${cust}'s environment align with what this EAP requires?
-2. Outreach approach — any nuances to factor in given your relationship?
-3. Availability — can you join the kickoff call once they agree?
-
-Once you've reviewed, I'll handle the initial customer outreach and coordinate the kickoff.
-
-Can you reply or ping me on Slack with your take?${sig(am,ame)}`;
-
-    case 'kickoff_scheduling': return `Subject: Kickoff Call — ${eap} — Let's Get Scheduled
-
-Hi ${fn},
-
-Thank you for agreeing to participate in the ${eap}! We're excited to have ${cust} as an early access partner.
-
-The next step is a 30-minute kickoff call to:
-• Review the EAP objectives and timeline
-• Preview the ${feat||'featured capabilities'} you'll be testing
-• Introduce ${se} (${see}), your dedicated Solutions Engineer
-• Set mutual expectations for the testing phase
-
-Please share your availability for the coming week and I'll send a calendar invite immediately. We're happy to work around your schedule (${tz}).
-
-A few slots that work for us:
-• [Option A — e.g., Mon, 10:00 AM ${tz}]
-• [Option B — e.g., Wed, 2:00 PM ${tz}]
-• [Option C — e.g., Fri, 11:00 AM ${tz}]
-
-Just reply with what works, or suggest alternatives.${sig(am,ame)}`;
-
-    case 'registration_followup': return `Subject: Quick Follow-Up: EAP Registration — ${eap}
-
-Hi ${fn},
-
-Hope the kickoff call got you excited about the ${eap}! I wanted to follow up on one housekeeping item before we move to the technical phase.
-
-We haven't received a completed EAP registration from your side yet. This typically includes:
-• Signing the EAP participation agreement / NDA
-• Completing portal access setup
-• Submitting the brief onboarding intake form
-
-This is required before we can schedule your technical onboarding and usually takes about 5–10 minutes.
-
-👉 [Registration Link — insert here]
-
-If you've hit a snag — procurement approval delays, access issues, or need a different signatory — please let me know and I'll help clear the path right away.
-
-Is there anything I can do to help move this forward?${sig(am,ame)}`;
-
-    case 'onboarding_scheduling': return `Subject: Next Step: Technical Onboarding — ${eap}
-
-Hi ${fn},
-
-Your EAP registration is confirmed — great news! You're ready to move into the technical onboarding phase of the ${eap}.
-
-${se} (${see}), your dedicated Solutions Engineer, will lead a 60-minute technical onboarding session that covers:
-• Environment prerequisites and compatibility review
-• Step-by-step deployment walkthrough for ${feat||'the EAP feature'}
-• Configuration best practices tailored to your environment
-• Defining success criteria and test scenarios for your evaluation
-
-To schedule, please share 2–3 availability windows in the coming week (${tz}), and ${fse} will send a confirmed calendar invite with join details and a pre-read.
-
-We recommend having your infrastructure or network team available for this session.${sig(am,ame)}`;
-
-    case 'build_sharing': return `Subject: ${eap} Build Access — Download Instructions Inside
-
-Hi ${fn},
-
-Following your successful onboarding session, we're ready to share access to the ${eap} build for ${feat||'the EAP feature'}.
-
-Access Details:
-• EAP Portal: [Insert portal URL]
-• Credentials: [Insert or confirm existing login]
-• Build Version: [e.g., v9.0-EAP-build-4]
-• Release Notes: [Insert link]
-• Installation Guide: [Insert link]
-
-Pre-Installation Checklist:
-☐ Test environment meets prerequisites from your onboarding session
-☐ Rollback plan in place (snapshot or backup recommended)
-☐ Primary technical contact identified for the testing phase
-
-${se} (${see}) is your go-to for any technical questions. ${fse} is familiar with your environment from the onboarding session and will prioritize your requests.
-
-Please confirm once you've successfully downloaded the build.${sig(am,ame)}`;
-
-    case 'build_followup': return `Subject: Checking In — ${eap} Build Download
-
-Hi ${fn},
-
-I wanted to check in on your progress with the ${eap} build for ${feat||'the EAP feature'}. We shared download instructions a little while back and want to make sure everything went smoothly.
-
-Quick status check:
-☐ Downloaded the EAP build?
-☐ Installed in your test environment?
-☐ Initial smoke test completed?
-
-If you've run into any issues — download errors, compatibility problems, or access questions — ${se} (${see}) is ready to help. ${fse} can jump on a quick call or troubleshoot async, whichever you prefer.${notes ? '\n\nFor reference from our last touchpoint: ' + notes : ''}
-
-If priorities have shifted on your end, no problem — just let us know and we'll adjust accordingly.${sig(am,ame)}`;
-
-    case 'active_testing': return `Subject: EAP Testing Check-In — How's ${feat||'It'} Going?
-
-Hi ${fn},
-
-Hope the ${feat||'EAP build'} is up and running in your environment! I wanted to check in on how the testing phase is going and make sure you have what you need.
-
-A few quick questions:
-1. Are you actively testing ${feat||'the EAP feature'} in your environment?
-2. Any blockers we can help clear — technical issues, resource constraints, open questions?
-3. Any early observations or impressions worth capturing before the formal feedback session?
-
-${se} (${see}) is on standby for any technical deep-dives. ${fse} can schedule a working session if you'd find that helpful.
-
-We'll be reaching out soon to schedule your structured feedback session with our product team — observations you're collecting now will make that conversation much richer.${sig(am,ame)}`;
-
-    case 'feedback_scheduling': return `Subject: Let's Schedule Your Feedback Session — ${eap}
-
-Hi ${fn},
-
-You've reached one of the most impactful milestones in the ${eap} — your structured feedback session with our Product team!
-
-This is your direct line to influence the roadmap for ${feat||'the EAP feature'}. ${pm} (${pme}), our Product Manager, will join along with ${se} and me to make sure every piece of feedback is captured accurately and routed to engineering with full context.
-
-What we'll cover (60 minutes):
-• Overall experience with ${feat||'the feature'} — what's working well
-• Pain points, gaps, or unexpected behaviors observed
-• Feature requests and enhancement ideas
-• Use-case scenarios we may not have considered
-• Open Q&A with the product team
-
-Please share 2–3 availability windows in the next 1–2 weeks (${tz}), and we'll confirm immediately.
-
-Your feedback genuinely shapes what ships.${sig(am,ame)}`;
-
-    case 'jira_creation_pm': return `Subject: [EAP Action] Jira Ticket Needed — Feedback from ${cust} (${eap})
-
-Hi ${fpm},
-
-We've completed the feedback session with ${cust} as part of the ${eap} and I'm sending over the summary for Jira ticket creation.
-
-Customer: ${cust}
-EAP Program: ${eap}
-Feature Area: ${feat||'—'}
-Feedback Summary: ${notes||'See attached notes.'}
-
-I've included a Jira draft below. Please:
-1. Review and fill in any bracketed fields with engineering detail
-2. Create the ticket(s) and share the ID(s) with me
-3. Provide your initial read on priority and feasibility
-4. Flag any open questions for the customer
-
-${se} can provide supplemental technical detail if needed. The customer is engaged and expecting follow-up once a ticket is created.${sig(am,ame)}`;
-
-    case 'pm_followup': return `Subject: [EAP Follow-Up] Status on ${jira||'Jira Ticket'} — ${cust} Requesting Update
-
-Hi ${fpm},
-
-I wanted to follow up on ${jira||'the open Jira ticket'} (${jst||'In Progress'}) related to our ${eap} participant ${cust}.
-
-The customer is actively asking for a status update via our AM relationship, and I want to keep them in the loop proactively before it becomes a concern.
-
-Could you share:
-1. Current status and any engineering progress made
-2. Expected timeline for the next milestone or resolution
-3. Any blockers, dependencies, or open questions for the customer
-4. Whether there's anything I or the SE can provide to support
-
-Once I have an update, I'll draft a customer-facing communication. Happy to schedule a quick sync if that's easier than email.${sig(am,ame)}`;
-
-    case 'customer_update': return `Subject: Update on Your Feedback — ${eap}
-
-Hi ${fn},
-
-I have a positive update to share regarding the feedback you provided during the ${eap}.
-
-Jira Ticket ${jira||''} — Status: ${jst||'Resolved'}
-
-Our engineering team has made progress on the items you raised, particularly around ${feat||'the features you tested'}. Here's what I can share:
-
-• [Summary of what was resolved or improved — customize from Jira resolution notes]
-• [Specific enhancements or fixes incorporated based on your feedback]
-• [GA availability timeline, if applicable]
-
-Your participation directly contributed to this outcome. The feedback you provided gave our product team the clarity and real-world context they needed.
-
-We'll be wrapping up the formal EAP phase shortly and reaching out to complete the close-out process.
-
-Thank you again for your partnership.${sig(am,ame)}`;
-
-    case 'closeout': return `Subject: Thank You — ${eap} Program Close-Out + Quick Survey
-
-Hi ${fn},
-
-On behalf of the entire Infoblox team, I want to sincerely thank you and the ${cust} team for your participation in the ${eap}.
-
-From the kickoff call through active testing and your detailed feedback session — your engagement was exactly the kind of committed partnership that drives better products. The insights you shared around ${feat||'the features you tested'} will have a lasting impact on what we ship.
-
-What happens from here:
-• Your feedback is formally logged and has been routed to Product and Engineering
-• Open Jira items will continue to be tracked and you'll receive updates as they progress
-• You'll have early visibility when ${feat||'the feature'} reaches general availability
-
-We'd love your candid feedback on the EAP experience:
-👉 [CSAT Survey — Insert Link Here] (5 minutes)
-
-Also: if ${cust} would be open to sharing your experience in a joint case study or customer reference, I'd love to explore that with you.
-
-Thank you again. It's been a genuine pleasure working with you.${sig(am,ame)}`;
-
-    default: return '';
-  }
-}
-
-// ══════════════════════════════════════════════════════════
-// JIRA DRAFT
-// ══════════════════════════════════════════════════════════
-function genJira(row) {
-  const eap=g(row,'EAP Name'), cust=g(row,'Customer Name'), contact=g(row,'Customer Contact');
-  const am=g(row,'AM Name'), se=g(row,'SE Name'), pm=g(row,'PM Name');
-  const feat=g(row,'Feature Requested'), notes=g(row,'Notes / Evidence');
-  const fbDate=g(row,'Feedback Session Scheduled Date')||'[date of feedback session]';
-  return `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-JIRA TICKET DRAFT — ${eap} | ${cust}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-ISSUE TYPE:  [ ] Bug  [ ] Enhancement  [ ] Feature Request  [ ] UX Issue
-PROJECT:     [Insert project key — e.g., BLOX, NIOS, DNS]
-PRIORITY:    [ ] Critical  [ ] High  [x] Medium  [ ] Low   ← adjust with PM
-LABELS:      EAP, ${eap.replace(/ /g,'-')}, Customer-Feedback, ${cust.replace(/ /g,'-')}
-COMPONENTS:  ${feat||'[Feature area]'}
-REPORTER:    ${am}
-ASSIGNEE:    [Assign after PM triage]
-
-──────────────────────────────────────────────
-SUMMARY:
-[EAP – ${feat}] Customer Feedback from ${cust}: [brief one-line issue description]
-
-──────────────────────────────────────────────
-DESCRIPTION:
-
-## Problem Statement
-[Summarize the core issue or gap in 2–3 sentences.]
-
-Raw EAP Notes:
-  ${notes||'[No notes recorded]'}
-
-## Customer Impact
-Customer:      ${cust}
-Contact:       ${contact}
-EAP Program:   ${eap}
-Feedback Date: ${fbDate}
-Feature Area:  ${feat}
-
-[Describe operational/business impact. How many users/environments affected?]
-
-## Expected Behavior
-[What did the customer expect the product to do?]
-
-## Actual Behavior
-[What does the product currently do instead?]
-
-## Steps to Reproduce (if applicable)
-1. [Step 1]
-2. [Step 2]
-3. [Step 3]
-
-## Supporting Evidence
-- EAP Program: ${eap}
-- Customer: ${cust} | Contact: ${contact}
-- Account Manager: ${am}
-- Solutions Engineer: ${se}
-- Product Manager: ${pm}
-- Raw Notes: ${notes}
-
-## Priority Justification
-[Why this priority? Reference customer tier, frequency, blocking status, competitive risk.]
-
-## Open Questions for PM / Engineering
-1. Is this within scope of the current release cycle?
-2. What is the estimated level of engineering effort?
-3. Are there workarounds we can share with the customer in the interim?
-4. What additional information or logs are needed from the customer?
-5. Should this link to an existing epic or roadmap initiative?
-6. Are other customers likely affected by the same issue?
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Complete all bracketed fields before creating the ticket.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-}
-
-// ══════════════════════════════════════════════════════════
-// RULE ENGINE
-// ══════════════════════════════════════════════════════════
-function evaluate(row) {
-  const eap=g(row,'EAP Name'), cust=g(row,'Customer Name');
-  const contact=g(row,'Customer Contact'), am=g(row,'AM Name'), se=g(row,'SE Name'), pm=g(row,'PM Name');
-  const tz=g(row,'Customer Time Zone'), feat=g(row,'Feature Requested'), notes=g(row,'Notes / Evidence');
-  const interest=g(row,'Customer Interest Status').toLowerCase();
-  const jiraId=g(row,'Jira Ticket ID'), jiraSt=g(row,'Jira Status').toLowerCase();
-  const dst=daysSince(row,'Last Customer Touchpoint Date');
-  const dsPm=daysSince(row,'PM/Engineering Last Update Date');
-  const stage=g(row,'Current Stage');
-
-  const kickDone   = isY(row,'Kickoff Completed');
-  const regDone    = isY(row,'Registration Completed');
-  const onbDone    = isY(row,'Onboarding Completed');
-  const bldShared  = isY(row,'Build Shared');
-  const bldInstall = isY(row,'Build Downloaded / Installed');
-  const testing    = isY(row,'Product Actively Testing');
-  const fbRecv     = isY(row,'Feedback Received');
-  const jiraCreated= isY(row,'Jira Ticket Created');
-  const custUpd    = isY(row,'Customer Updated');
-  const closeSent  = isY(row,'Close-Out Email Sent');
-  const survSent   = isY(row,'Survey Sent');
-  const kickSched  = hasV(row,'Kickoff Scheduled Date');
-  const onbSched   = hasV(row,'Onboarding Scheduled Date');
-  const fbSched    = hasV(row,'Feedback Session Scheduled Date');
-
-  const mk = (priority,missing,action,atype,stakeholder,owner,emailType,hasJira=false) => ({
-    priority, eap, cust, contact, stage, missing, action, atype, stakeholder, owner,
-    am, se, pm, tz, feat, notes, dst: dst<9000?dst:null,
-    emailDraft: emailType ? genEmail(emailType,row) : '',
-    jiraDraft: hasJira ? genJira(row) : '',
+async function ollamaChatStream(system, userMsg, onToken) {
+  const model = activeModel();
+  if (!model) throw new Error('No model selected');
+  const r = await fetch(ollamaURL()+'/api/chat', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({model, messages:[{role:'system',content:system},{role:'user',content:userMsg}], stream:true}),
+    signal: AbortSignal.timeout(120000)
   });
-
-  if (['dropped','declined','not interested','churned'].includes(interest))
-    return mk('Low','Customer Exited EAP','No action — customer exited','no_action','—','—',null);
-
-  if (closeSent && survSent)
-    return mk('Low','None — Completed','EAP complete, no action needed','complete','—','—',null);
-
-  if (custUpd && (!closeSent || !survSent))
-    return mk(dst>10?'High':'Medium','Close-Out + CSAT Survey Not Sent',
-      'Send close-out email and CSAT survey','closeout',contact,am,'closeout');
-
-  if (jiraCreated && ['resolved','done','closed','complete','released'].includes(jiraSt) && !custUpd)
-    return mk('High','Customer Not Notified of Jira Resolution',
-      'Send customer update — Jira has been resolved','customer_update',contact,pm||am,'customer_update');
-
-  if (jiraCreated && jiraId && dsPm>14)
-    return mk(dsPm>21?'High':'Medium',`No PM Update in ${dsPm} Days`,
-      `Follow up with PM/Engineering on ${jiraId}`,'pm_followup',g(row,'PM Email')||pm,pm,'pm_followup');
-
-  if (fbRecv && !jiraCreated)
-    return mk('High','Jira Ticket Not Created from Feedback',
-      'Create Jira ticket from customer feedback','jira_creation',g(row,'PM Email')||pm,pm,'jira_creation_pm',true);
-
-  if (testing && !fbRecv && !fbSched)
-    return mk(dst>7?'High':'Medium','Feedback Session Not Scheduled',
-      'Schedule structured feedback session','feedback_scheduling',contact,se||am,'feedback_scheduling');
-
-  if (bldInstall && !testing)
-    return mk(dst>10?'High':'Medium','Active Testing Not Confirmed',
-      'Confirm customer is actively testing','active_testing',contact,se||am,'active_testing');
-
-  if (bldShared && !bldInstall)
-    return mk(dst>10?'High':'Medium','Build Not Downloaded / Installed',
-      'Follow up on build download/installation','build_followup',contact,se||am,'build_followup');
-
-  if (onbDone && !bldShared)
-    return mk('High','Build Not Shared with Customer',
-      'Share EAP build and download instructions','build_sharing',contact,se,'build_sharing');
-
-  if (regDone && !onbDone && !onbSched)
-    return mk(dst>7?'High':'Medium','Onboarding Not Scheduled',
-      'Schedule technical onboarding session','onboarding_scheduling',contact,se,'onboarding_scheduling');
-
-  if (kickDone && !regDone)
-    return mk(dst>7?'High':'Medium','Registration Not Completed',
-      'Follow up on EAP registration','registration_followup',contact,am,'registration_followup');
-
-  if (['agreed','confirmed','yes','active'].includes(interest) && !kickDone && !kickSched)
-    return mk(dst>7?'High':'Medium','Kickoff Not Scheduled',
-      'Schedule EAP kickoff call','kickoff_scheduling',contact,am,'kickoff_scheduling');
-
-  if (['potential',''].includes(interest) && feat)
-    return mk(dst>14?'High':dst<=3?'Low':'Medium','AM/SE Coordination Not Done',
-      'Coordinate with AM/SE and initiate EAP outreach','am_se_outreach',g(row,'AM Email')||am,am,'am_se_outreach');
-
-  if (['potential',''].includes(interest))
-    return mk('Medium','Customer Outreach Not Sent',
-      'Send direct EAP recruitment email','direct_recruitment',contact,am,'direct_recruitment');
-
-  return mk('Low','Review Required','Review customer record manually','review',am,am,null);
-}
-
-// ══════════════════════════════════════════════════════════
-// TEXT SIGNAL ANALYSIS (no AI needed)
-// ══════════════════════════════════════════════════════════
-const SIGNALS = [
-  {re:/instal+ed.*(build|software|package)|build.*instal+ed|got.*(build|it).*(up|running|working)/i, label:'Build Installed', field:'Build Downloaded / Installed', value:'Yes', next:'Confirm active testing → schedule feedback session if not done.'},
-  {re:/active(ly)? test|been test|running tests|testing.*(environment|staging|prod)/i, label:'Actively Testing', field:'Product Actively Testing', value:'Yes', next:'Schedule feedback session with PM.'},
-  {re:/share.*(feedback|thoughts|input)|love to.*(provide|give).*(feedback|input)|ready to.*(talk|debrief|discuss)/i, label:'Feedback Ready', field:'Feedback Received (pending)', value:'Pending', next:'Schedule feedback session immediately — HIGH priority.'},
-  {re:/any.*(update|news|progress).*(ticket|jira|issue)|ticket.*(update|status)|follow.{0,5}up.*(jira|ticket)/i, label:'Customer Asking for Jira Update', field:null, value:null, next:'PM/Engineering follow-up URGENT — customer is asking.'},
-  {re:/issue|problem|error|not work|broken|bug|fail/i, label:'Technical Issue Reported', field:null, value:null, next:'Flag SE for support, draft troubleshooting response.'},
-  {re:/not.*(going|able|participat|continu|interested)|drop|opt.?out|can.?t participat|step.?down/i, label:'Customer May Be Dropping', field:'Customer Interest Status', value:'Dropped', next:'Update status to Dropped, flag AM immediately.'},
-  {re:/kickoff.*(done|complete|finished|went well)|had.*(kickoff|kick-off)/i, label:'Kickoff Completed', field:'Kickoff Completed', value:'Yes', next:'Follow up on registration link.'},
-  {re:/onboard.*(done|complete|finished|great|went well)|completed.*onboard/i, label:'Onboarding Completed', field:'Onboarding Completed', value:'Yes', next:'Share build/download instructions.'},
-  {re:/download.*(build|package|file)|got.*(build|package)|received.*(build|file)/i, label:'Build Downloaded', field:'Build Downloaded / Installed', value:'Yes', next:'Check if installed and actively testing.'},
-  {re:/registr.*(done|complete|submit|finished)|signed.*(nda|agreement)|portal.*(access|set.?up)/i, label:'Registration Complete', field:'Registration Completed', value:'Yes', next:'Schedule technical onboarding session.'},
-];
-
-function analyzeText() {
-  const text = document.getElementById('paste-in').value.trim();
-  const out  = document.getElementById('signal-out');
-  if (!text) { out.style.display='none'; return; }
-
-  const found = SIGNALS.filter(s => s.re.test(text));
-
-  // Try to match a customer name from loaded data
-  const matched = [];
-  if (rawRows.length) {
-    rawRows.forEach(row => {
-      const cn = g(row,'Customer Name');
-      if (cn && text.toLowerCase().includes(cn.toLowerCase().split(' ')[0].toLowerCase())) {
-        matched.push(cn + ' (' + g(row,'EAP Name') + ')');
-      }
-    });
+  const reader = r.body.getReader();
+  const dec = new TextDecoder();
+  let buf='';
+  while(true){
+    const {done,value} = await reader.read();
+    if(done) break;
+    buf += dec.decode(value);
+    const lines = buf.split('\n');
+    buf = lines.pop();
+    for(const line of lines){
+      if(!line.trim()) continue;
+      try{
+        const d = JSON.parse(line);
+        if(d.message?.content) onToken(d.message.content);
+        if(d.done) return;
+      }catch{}
+    }
   }
-
-  let html = '';
-  if (matched.length) {
-    html += `🏢 Possible customer match: ${[...new Set(matched)].join(', ')}\n\n`;
-  }
-  if (found.length) {
-    html += `📡 Signals detected:\n`;
-    found.forEach(s => {
-      html += `\n• ${s.label}`;
-      if (s.field) html += `\n  → Update: "${s.field}" = "${s.value}"`;
-      html += `\n  → Next action: ${s.next}`;
-    });
-  } else {
-    html += '• No strong EAP lifecycle signals detected.\n  Review manually or add more context.';
-  }
-
-  out.style.display = 'block';
-  out.textContent = html;
 }
 
-// ══════════════════════════════════════════════════════════
-// PROCESS & RENDER
-// ══════════════════════════════════════════════════════════
-function processRows(rows) {
-  rawRows = rows;
-  allActions = rows.map(evaluate);
-  allActions.sort((a,b) => {
-    const po = {High:0,Medium:1,Low:2};
-    const pd = (po[a.priority]||2) - (po[b.priority]||2);
-    if (pd !== 0) return pd;
-    return (b.dst||0) - (a.dst||0);
-  });
-  populateFilters();
-  renderMetrics();
-  renderQueue();
-  document.getElementById('empty').style.display = 'none';
-  document.getElementById('metrics').style.display = 'grid';
-  document.getElementById('filter-bar').style.display = 'flex';
-  document.getElementById('queue-hd').style.display = 'flex';
-  document.getElementById('export-csv-btn').style.display = '';
-  document.getElementById('export-drafts-btn').style.display = '';
+// ══════════════════════════════════════════════════════════════════
+// RULE ENGINE (runs even without AI, AI enhances it)
+// ══════════════════════════════════════════════════════════════════
+function isY(v){ return ['yes','true','1','y'].includes(String(v||'').toLowerCase().trim()); }
+function days(v){ const n=parseInt(v,10); return isNaN(n)?999:n; }
+
+function evaluate(row){
+  const d=days(row['Days Since Last Touchpoint']||row['Days Since Last Touchpoint ']);
+  const overdue = d>=10;
+  const missingBuild = !isY(row['Build Downloaded']);
+  const missingTest  = isY(row['Build Downloaded'])&&!isY(row['Product Actively Testing']);
+  const missingFB    = isY(row['Product Actively Testing'])&&!isY(row['Feedback Session Scheduled']);
+  const missingKick  = !isY(row['Kickoff Completed']);
+  const missingReg   = !isY(row['Registration Completed']);
+
+  const rules=[
+    {cond:()=>row['EAP Status']==='Dropped',pri:'LOW',action:'Dropped — review & archive',missing:'EAP Status=Dropped',type:'archive'},
+    {cond:()=>!isY(row['Recruited']),pri:'HIGH',action:'Recruit customer to EAP',missing:'Recruitment',type:'recruit'},
+    {cond:()=>isY(row['Recruited'])&&missingKick&&overdue,pri:'HIGH',action:'Schedule kickoff (overdue)',missing:'Kickoff',type:'kickoff'},
+    {cond:()=>isY(row['Recruited'])&&missingKick,pri:'MEDIUM',action:'Schedule kickoff call',missing:'Kickoff',type:'kickoff'},
+    {cond:()=>isY(row['Kickoff Completed'])&&missingReg&&overdue,pri:'HIGH',action:'Send registration reminder (overdue)',missing:'Registration',type:'registration'},
+    {cond:()=>isY(row['Kickoff Completed'])&&missingReg,pri:'MEDIUM',action:'Send registration instructions',missing:'Registration',type:'registration'},
+    {cond:()=>isY(row['Registration Completed'])&&missingBuild&&overdue,pri:'HIGH',action:'Re-send build link (overdue)',missing:'Build Download',type:'build'},
+    {cond:()=>isY(row['Registration Completed'])&&missingBuild,pri:'MEDIUM',action:'Send build download link',missing:'Build Download',type:'build'},
+    {cond:()=>missingTest&&overdue,pri:'HIGH',action:'Check in on testing progress (overdue)',missing:'Active Testing',type:'testing'},
+    {cond:()=>missingTest,pri:'MEDIUM',action:'Encourage customer to start testing',missing:'Active Testing',type:'testing'},
+    {cond:()=>missingFB&&overdue,pri:'HIGH',action:'Schedule feedback session (overdue)',missing:'Feedback Session',type:'feedback'},
+    {cond:()=>missingFB,pri:'MEDIUM',action:'Schedule feedback session',missing:'Feedback Session',type:'feedback'},
+    {cond:()=>isY(row['Feedback Session Scheduled'])&&!isY(row['Jira Tickets Created'])&&overdue,pri:'HIGH',action:'PM follow-up on Jira tickets (overdue)',missing:'Jira Creation',type:'jira'},
+    {cond:()=>isY(row['Feedback Session Scheduled'])&&!isY(row['Jira Tickets Created']),pri:'LOW',action:'Create Jira tickets from feedback',missing:'Jira Creation',type:'jira'},
+  ];
+  for(const rule of rules) if(rule.cond()) return {priority:rule.pri,action:rule.action,missing:rule.missing,type:rule.type};
+  return {priority:'LOW',action:'Maintain engagement — all stages complete',missing:'',type:'maintain'};
 }
 
-function populateFilters() {
-  const eaps = [...new Set(allActions.map(a=>a.eap))].sort();
-  const acts = [...new Set(allActions.map(a=>a.action))].sort();
-  const fe = document.getElementById('f-eap');
-  fe.innerHTML = '<option value="">All EAPs</option>' + eaps.map(e=>`<option>${e}</option>`).join('');
-  const fa = document.getElementById('f-action');
-  fa.innerHTML = '<option value="">All Actions</option>' + acts.map(a=>`<option>${a}</option>`).join('');
+// ══════════════════════════════════════════════════════════════════
+// EMAIL TEMPLATES (fallback when AI not available)
+// ══════════════════════════════════════════════════════════════════
+function genEmail(type, row){
+  const n=row['Customer Name']||'there', co=row['Company']||'your company', eap=row['EAP Program']||'our EAP';
+  const d=days(row['Days Since Last Touchpoint']||row['Days Since Last Touchpoint ']);
+  const templates={
+    recruit:`Hi ${n},\n\nI hope this message finds you well. I wanted to reach out because we're inviting a select group of customers to participate in our ${eap}.\n\nAs a valued customer, your feedback would be invaluable in shaping the final product. The program involves:\n• Early access to new builds\n• Direct input to our product roadmap\n• Priority support from our engineering team\n\nWould you be interested in joining? Happy to schedule a brief call to walk you through the details.\n\nBest,\n[Your Name]`,
+    kickoff:`Hi ${n},\n\nThank you for agreeing to participate in our ${eap}! I'd love to schedule a kickoff call to get you fully onboarded.\n\nDuring the call we'll cover program expectations, the build download process, and how to submit feedback.\n\nDo any of the following times work for you?\n• [Time option 1]\n• [Time option 2]\n• [Time option 3]\n\nLooking forward to working with you!\n\nBest,\n[Your Name]`,
+    registration:`Hi ${n},\n\nJust a quick follow-up on your ${eap} registration. To get you access to the early build, we need to complete your registration first.\n\n${d>=10?`I noticed it's been about ${d} days since we last connected — I want to make sure you have everything you need.`:''}\n\nCould you please complete the registration at your earliest convenience? Let me know if you've run into any issues and I'll help resolve them right away.\n\nBest,\n[Your Name]`,
+    build:`Hi ${n},\n\nI hope testing is going well! I wanted to check in and make sure you successfully received and installed the ${eap} build.\n\n${d>=10?`It's been about ${d} days since our last touchpoint, so I wanted to reach out proactively.`:''}\n\nIf you have any trouble with the installation, our SE team is standing by to assist. Just reply to this email and we'll jump on a call.\n\nBest,\n[Your Name]`,
+    testing:`Hi ${n},\n\nHow's the testing going? We'd love to hear about your experience with the ${eap} build so far — even early impressions are helpful.\n\nA few things we're particularly interested in:\n• Installation and setup experience\n• Performance in your environment\n• Any features that aren't quite meeting your needs\n\nHappy to jump on a quick call if that's easier.\n\nBest,\n[Your Name]`,
+    feedback:`Hi ${n},\n\nBased on your testing progress, I'd love to schedule a formal feedback session with our product team. These sessions are extremely valuable for shaping the roadmap.\n\nThe session is typically 30-45 minutes and we can cover anything you'd like. Would any of these times work?\n• [Time option 1]\n• [Time option 2]\n\nLooking forward to hearing your thoughts!\n\nBest,\n[Your Name]`,
+    jira:`Hi ${n},\n\nThank you so much for your feedback session — it was incredibly valuable!\n\nI'm working with our PM team to get your items logged in Jira. I'll share the ticket numbers once they're created so you can track progress directly.\n\nIs there anything else you'd like to add while it's fresh?\n\nBest,\n[Your Name]`,
+    maintain:`Hi ${n},\n\nJust checking in to see how everything is going with ${eap}. We appreciate your continued participation!\n\nPlease don't hesitate to reach out if you have questions, run into issues, or want to share feedback at any time.\n\nBest,\n[Your Name]`,
+    archive:`Hi ${n},\n\nThank you for your time and engagement with our ${eap}. We understand that priorities change and want to respect your time.\n\nWould you be open to a brief 15-minute call to share any final thoughts? Your perspective — even if participation wasn't possible — is valuable to us.\n\nThank you again, and we hope to work together in the future.\n\nBest,\n[Your Name]`
+  };
+  return templates[type]||templates.maintain;
 }
 
-function renderMetrics() {
-  const counts = {High:0,Medium:0,Low:0};
-  allActions.forEach(a => { if(counts[a.priority]!==undefined) counts[a.priority]++; });
-  document.getElementById('m-total').textContent = allActions.length;
-  document.getElementById('m-high').textContent  = counts.High;
-  document.getElementById('m-med').textContent   = counts.Medium;
-  document.getElementById('m-low').textContent   = counts.Low;
+function genJira(row){
+  const n=row['Customer Name']||'Unknown', co=row['Company']||'Unknown';
+  const eap=row['EAP Program']||'EAP', ev=evaluate(row);
+  return `## Jira Ticket Draft\n\n**Project**: EAP\n**Type**: Task\n**Priority**: ${ev.priority}\n**Assignee**: [PM Name]\n\n**Summary**: [${eap}] ${co} — ${ev.action}\n\n**Description**:\nCustomer ${n} (${co}) requires attention in the EAP lifecycle.\n\n**Missing stage**: ${ev.missing||'N/A'}\n**Days since touchpoint**: ${days(row['Days Since Last Touchpoint']||row['Days Since Last Touchpoint '])}\n\n**Acceptance Criteria**:\n- [ ] Outreach sent to customer\n- [ ] Response received and logged\n- [ ] EAP tracker updated\n\n**Labels**: eap, customer-success, ${ev.type}`;
 }
 
-function renderQueue() {
-  const fEap = document.getElementById('f-eap').value;
-  const fPri = document.getElementById('f-pri').value;
-  const fAct = document.getElementById('f-action').value;
+// ══════════════════════════════════════════════════════════════════
+// AI-POWERED ANALYSIS
+// ══════════════════════════════════════════════════════════════════
+const EAP_SYS = `You are an AI EAP (Early Access Program) lifecycle coordinator agent for Infoblox.
+You help track and manage customer participation through stages: Recruitment → Kickoff → Registration → Onboarding → Build Install → Active Testing → Feedback Session → Jira → PM Follow-up → Customer Update → Close-out → Complete.
+Be concise, professional, and actionable. Prioritize customers by urgency.`;
 
-  const filtered = allActions.filter(a =>
-    (!fEap || a.eap === fEap) &&
-    (!fPri || a.priority === fPri) &&
-    (!fAct || a.action === fAct)
-  );
+async function aiEnhanceAction(row, baseAction) {
+  const d = days(row['Days Since Last Touchpoint']||row['Days Since Last Touchpoint ']);
+  const prompt = `Customer: ${row['Customer Name']} at ${row['Company']}
+EAP: ${row['EAP Program']||'unknown'}
+Days since last contact: ${d}
+Current stage gaps: ${baseAction.missing||'none identified'}
+Base recommendation: ${baseAction.action}
 
-  document.getElementById('queue-count').textContent = `${filtered.length} action${filtered.length!==1?'s':''} shown`;
+In 1-2 sentences, provide a specific, actionable insight for this customer. Be direct.
+Also provide a risk level word: CRITICAL, HIGH, MEDIUM, or LOW.
+Format: RISK: [word] | INSIGHT: [your insight]`;
+  try {
+    const r = await ollamaChat(EAP_SYS, prompt);
+    const riskM = r.match(/RISK:\s*(CRITICAL|HIGH|MEDIUM|LOW)/i);
+    const insM  = r.match(/INSIGHT:\s*(.+)/i);
+    return {
+      risk: riskM?.[1]?.toUpperCase()||baseAction.priority,
+      insight: insM?.[1]?.trim()||r.trim()
+    };
+  } catch { return null; }
+}
 
-  const q = document.getElementById('queue');
-  if (filtered.length === 0) {
-    q.innerHTML = '<div style="text-align:center;padding:40px;color:#9baabb">No actions match the current filters.</div>';
+async function aiGenerateEmail(row, type) {
+  const d = days(row['Days Since Last Touchpoint']||row['Days Since Last Touchpoint ']);
+  const prompt = `Write a professional email for this EAP customer situation.
+
+Customer: ${row['Customer Name']} at ${row['Company']}
+EAP Program: ${row['EAP Program']||'Early Access Program'}
+Days since last contact: ${d}
+Action needed: ${type}
+Stages completed: Build=${row['Build Downloaded']}, Testing=${row['Product Actively Testing']}, Feedback=${row['Feedback Session Scheduled']}
+
+Write a concise (3 short paragraphs) professional email. Include a subject line at the top (Subject: ...).
+Do NOT use placeholders like [Name] — use the actual customer name.
+Tone: warm, professional, collaborative. Get to the point quickly.`;
+  return await ollamaChat(EAP_SYS, prompt);
+}
+
+async function analyzeText() {
+  const text = document.getElementById('analyze-input').value.trim();
+  if (!text) return;
+  const resDiv = document.getElementById('analyze-result');
+
+  const customerList = S.customers.map(c=>`${c['Customer Name']} (${c['Company']})`).join(', ');
+
+  resDiv.innerHTML = `<div class="analyze-result"><h4>🤖 Analyzing<span class="thinking-dots"></span></h4></div>`;
+
+  if (!S.ollamaOk) {
+    resDiv.innerHTML = fallbackAnalyze(text);
     return;
   }
 
-  q.innerHTML = filtered.map((a,i) => buildCard(a,i)).join('');
+  try {
+    const prompt = `Analyze this email or Teams message from an EAP customer context.
+
+Known customers in the system: ${customerList||'(none loaded yet)'}
+
+Message:
+---
+${text}
+---
+
+Extract and return JSON with these exact keys:
+{
+  "customer_name": "matched name from the list, or 'Unknown' if no match",
+  "company": "company name if identifiable",
+  "signals": ["list of EAP signals detected, e.g. 'build installed', 'actively testing', 'needs support', 'wants to drop out', etc."],
+  "sentiment": "Positive / Neutral / Negative / Urgent",
+  "urgency": "HIGH / MEDIUM / LOW",
+  "recommended_action": "specific next action to take",
+  "key_quote": "most important sentence from the message",
+  "stage_updates": {"field_name": "new_value"}
 }
 
-function bdg(p) {
-  const cls={High:'b-high',Medium:'b-med',Low:'b-low'}[p]||'b-low';
-  return `<span class="badge ${cls}">${p.toUpperCase()}</span>`;
-}
+For stage_updates, only include fields that clearly changed. Field names: Build Downloaded, Product Actively Testing, Feedback Session Scheduled.`;
 
-let _uid = 0;
-function buildCard(a, i) {
-  const id = 'c' + (_uid++);
-  const stripeClass = {High:'stripe-high',Medium:'stripe-medium',Low:'stripe-low'}[a.priority]||'';
-  const isComplete = ['complete','no_action'].includes(a.atype);
+    const raw = await ollamaChat(EAP_SYS, prompt, true);
+    let data;
+    try { data = JSON.parse(raw); } catch { data = {customer_name:'Parse error',recommended_action:raw,signals:[],urgency:'MEDIUM',sentiment:'Neutral'}; }
 
-  const twHtml = a.dst !== null ? (() => {
-    const cls = a.dst>14?'tw-red':a.dst>7?'tw-amber':'tw-green';
-    const ico = a.dst>14?'🔴':a.dst>7?'🟡':'🟢';
-    return `<div class="touch-line"><span class="${cls}">${ico} Last touchpoint: ${a.dst} day${a.dst!==1?'s':''} ago</span></div>`;
-  })() : '';
+    const s = v => v||'—';
+    const sigHtml = (data.signals||[]).map(x=>`<span style="background:rgba(91,108,249,.2);color:var(--accent2);padding:2px 7px;border-radius:5px;font-size:.8em;margin-right:4px">${x}</span>`).join('');
 
-  const evidenceTab = `
-    <div class="pane on" id="${id}-ev">
-      ${a.notes && a.notes!=='—' ? `<div style="background:#f0f6ff;border-left:4px solid #1565c0;border-radius:6px;padding:10px 14px;font-size:.86em;margin-bottom:10px">${a.notes}</div>` : '<p style="color:#9baabb;font-size:.86em">No notes recorded.</p>'}
-      <div style="background:${isComplete?'#e8f5e9':'#fff8e1'};border-radius:6px;padding:10px 14px;font-size:.86em;font-weight:600;color:${isComplete?'#1b5e20':'#7a4100'}">
-        ${isComplete ? '✅' : '⚡'} ${a.action}
-      </div>
+    resDiv.innerHTML = `<div class="analyze-result">
+      <h4>🤖 AI Analysis Result</h4>
+      <div class="ar-row"><div class="ar-label">Customer</div><div class="ar-val" style="font-weight:700">${s(data.customer_name)}</div></div>
+      <div class="ar-row"><div class="ar-label">Company</div><div class="ar-val">${s(data.company)}</div></div>
+      <div class="ar-row"><div class="ar-label">Signals</div><div class="ar-val">${sigHtml||'—'}</div></div>
+      <div class="ar-row"><div class="ar-label">Sentiment</div><div class="ar-val">${s(data.sentiment)}</div></div>
+      <div class="ar-row"><div class="ar-label">Urgency</div><div class="ar-val"><span class="priority-badge p-${s(data.urgency)}">${s(data.urgency)}</span></div></div>
+      <div class="ar-row"><div class="ar-label">Recommended</div><div class="ar-val">${s(data.recommended_action)}</div></div>
+      ${data.key_quote?`<div class="ar-row"><div class="ar-label">Key quote</div><div class="ar-val" style="font-style:italic;color:var(--muted)">"${data.key_quote}"</div></div>`:''}
     </div>`;
 
-  const emailTab = a.emailDraft ? `
-    <div class="pane" id="${id}-em">
-      <p class="draft-note">✏️ Review, personalize bracketed fields, then copy and send.</p>
-      <textarea class="draft email" id="${id}-etxt" rows="14">${a.emailDraft}</textarea>
-      <div class="copy-row">
-        <button class="btn btn-primary btn-sm" onclick="copyText('${id}-etxt',this)">📋 Copy Email</button>
-        <span style="font-size:.78em;color:#9baabb;align-self:center">To: ${a.stakeholder||'—'}</span>
-      </div>
-    </div>` : `<div class="pane" id="${id}-em"><p style="color:#9baabb;font-size:.86em;padding:10px 0">No draft email for this action type.</p></div>`;
+    addLog('🔍','Analyze',`Analyzed message — ${data.customer_name||'unknown customer'}`,data.recommended_action||'');
+    if(data.stage_updates&&Object.keys(data.stage_updates).length>0){
+      const cust = S.customers.find(c=>(c['Customer Name']||'').toLowerCase().includes((data.customer_name||'').toLowerCase()));
+      if(cust){
+        Object.assign(cust, data.stage_updates);
+        processRows();
+        addLog('✅','Update',`Updated fields for ${data.customer_name}`,JSON.stringify(data.stage_updates));
+      }
+    }
+  } catch(e) {
+    resDiv.innerHTML = fallbackAnalyze(text);
+    addLog('⚠️','Analyze','AI analysis failed — using fallback pattern matching',e.message);
+  }
+}
 
-  const jiraTab = a.jiraDraft ? `
-    <div class="pane" id="${id}-ji">
-      <p class="draft-note">✏️ Complete all bracketed fields before creating the Jira ticket.</p>
-      <textarea class="draft jira" id="${id}-jtxt" rows="22">${a.jiraDraft}</textarea>
-      <div class="copy-row">
-        <button class="btn btn-primary btn-sm" onclick="copyText('${id}-jtxt',this)">📋 Copy Jira Draft</button>
-      </div>
-    </div>` : '';
+function fallbackAnalyze(text) {
+  const t = text.toLowerCase();
+  const signals = [];
+  const SIGS = [
+    [/install|download|got the build|received the build/,'Build installed'],
+    [/test|testing|trying it out|using it/,'Actively testing'],
+    [/feedback|thoughts|review|session/,'Wants feedback session'],
+    [/jira|ticket|bug|issue|defect/,'Jira/bug related'],
+    [/help|support|problem|trouble|error|issue|not working/,'Needs support'],
+    [/not going to|won't participate|dropping|can't join/,'Dropping out'],
+    [/working great|love it|excellent|impressed|happy with/,'Positive signal'],
+    [/no reply|haven't heard|follow.?up|checking in/,'Follow-up needed'],
+  ];
+  for(const [re,label] of SIGS) if(re.test(t)) signals.push(label);
+  const matched = S.customers.find(c=>{
+    const cn=(c['Customer Name']||'').toLowerCase();
+    const co=(c['Company']||'').toLowerCase();
+    return cn&&(t.includes(cn)||t.includes(co));
+  });
+  const sigHtml = signals.map(x=>`<span style="background:rgba(91,108,249,.2);color:var(--accent2);padding:2px 7px;border-radius:5px;font-size:.8em;margin-right:4px">${x}</span>`).join('');
+  return `<div class="analyze-result">
+    <h4>🔍 Pattern Analysis (AI unavailable)</h4>
+    <div class="ar-row"><div class="ar-label">Customer match</div><div class="ar-val">${matched?matched['Customer Name']+' ('+matched['Company']+')':'No match — load data or AI needed'}</div></div>
+    <div class="ar-row"><div class="ar-label">Signals found</div><div class="ar-val">${sigHtml||'None detected'}</div></div>
+    <div style="margin-top:10px;font-size:.78em;color:var(--muted)">Connect Ollama for deeper AI analysis.</div>
+  </div>`;
+}
 
-  const tabs = [
-    `<button class="tab on" onclick="switchTab('${id}','ev',this)">📋 Evidence</button>`,
-    `<button class="tab" onclick="switchTab('${id}','em',this)">✉️ Draft Email</button>`,
-    ...(a.jiraDraft ? [`<button class="tab" onclick="switchTab('${id}','ji',this)">🎫 Jira Draft</button>`] : []),
-  ].join('');
+// ══════════════════════════════════════════════════════════════════
+// AGENT CYCLE
+// ══════════════════════════════════════════════════════════════════
+async function runAgentCycle() {
+  if(S.agentRunning) return;
+  if(!S.customers.length){ addLog('⚠️','Agent','No customers loaded'); return; }
+  S.agentRunning = true;
+  document.getElementById('run-cycle-btn').disabled = true;
+  document.getElementById('stop-btn').style.display = '';
 
-  return `
-<div class="action-card ${stripeClass}">
-  <div class="card-hd" id="${id}-hd" onclick="toggleCard('${id}')" ${isComplete?'':''}>
-    ${bdg(a.priority)}
-    <strong>${a.cust}</strong>
-    <span style="color:#90a4ae;font-size:.88em"> · ${a.eap}</span>
-    <span style="color:#546;font-size:.85em;margin-left:4px"> — ${a.action}</span>
-    <span class="chev">▼</span>
+  const cycleBar = document.getElementById('cycle-bar');
+  const cycleLabel = document.getElementById('cycle-label');
+  const cycleCounter = document.getElementById('cycle-counter');
+  cycleBar.style.display = 'flex';
+
+  addLog('🚀','Agent',`Starting agent cycle — ${S.customers.length} customers, model: ${activeModel()}`);
+  S.aiInsights = 0;
+
+  const highPri = S.actions.filter(a=>a.priority==='HIGH');
+  const toProcess = highPri.length ? highPri.slice(0,8) : S.actions.slice(0,8);
+
+  for(let i=0;i<toProcess.length;i++){
+    if(!S.agentRunning) break;
+    const a = toProcess[i];
+    cycleLabel.textContent = `Analyzing ${a.name} (${a.company})…`;
+    cycleCounter.textContent = `${i+1}/${toProcess.length}`;
+
+    if(S.ollamaOk){
+      try{
+        const row = S.customers.find(c=>c['Customer Name']===a.name)||{};
+        const ai = await aiEnhanceAction(row, a);
+        if(ai){
+          a.aiInsight = ai.insight;
+          a.aiRisk = ai.risk;
+          S.aiInsights++;
+          addLog('🧠','AI',`${a.name}: ${ai.insight}`,'');
+        }
+      }catch(e){ addLog('⚠️','AI',`Failed for ${a.name}`,e.message); }
+    }
+    renderQueue();
+    await new Promise(r=>setTimeout(r,300));
+  }
+
+  cycleBar.style.display = 'none';
+  S.agentRunning = false;
+  document.getElementById('run-cycle-btn').disabled = false;
+  document.getElementById('stop-btn').style.display = 'none';
+  updateMetrics();
+  addLog('✅','Agent',`Cycle complete — ${S.aiInsights} AI insights generated`);
+}
+
+function stopAgent() {
+  S.agentRunning = false;
+  document.getElementById('cycle-bar').style.display = 'none';
+  document.getElementById('run-cycle-btn').disabled = false;
+  document.getElementById('stop-btn').style.display = 'none';
+  addLog('⏹','Agent','Agent stopped by user');
+}
+
+let autoCycleTimer = null;
+function startAutoCycle(){
+  stopAutoCycle();
+  const mins = parseInt(document.getElementById('poll-interval').value,10)||5;
+  addLog('⏱','Auto','Auto-scan started — every '+mins+' minutes');
+  document.getElementById('cycle-status-text').textContent = `Running every ${mins} min`;
+  autoCycleTimer = setInterval(()=>{ runAgentCycle(); }, mins*60*1000);
+  runAgentCycle();
+}
+function stopAutoCycle(){
+  if(autoCycleTimer){ clearInterval(autoCycleTimer); autoCycleTimer=null; }
+  document.getElementById('cycle-status-text').textContent = 'Not running';
+  addLog('⏱','Auto','Auto-scan stopped');
+}
+
+// ══════════════════════════════════════════════════════════════════
+// AGENT CHAT
+// ══════════════════════════════════════════════════════════════════
+function chatKey(e){
+  if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendChat(); }
+}
+
+async function sendChat(){
+  const inp = document.getElementById('chat-input');
+  const msg = inp.value.trim();
+  if(!msg) return;
+  inp.value='';
+
+  appendChatMsg('user', msg);
+  S.chatHistory.push({role:'user',content:msg});
+
+  if(!S.ollamaOk){
+    appendChatMsg('agent','⚠️ Ollama is not connected. Install Ollama and run `ollama pull llama3.2` to enable AI chat.');
+    return;
+  }
+
+  const thinkEl = appendChatMsg('agent','<span class="thinking-dots">Thinking</span>', true);
+
+  const customerSummary = S.customers.slice(0,20).map(c=>{
+    const ev = evaluate(c);
+    const d = days(c['Days Since Last Touchpoint']||c['Days Since Last Touchpoint ']);
+    return `- ${c['Customer Name']} (${c['Company']}) | EAP: ${c['EAP Program']} | Priority: ${ev.priority} | Days: ${d} | Missing: ${ev.missing||'none'}`;
+  }).join('\n');
+
+  const sys = `${EAP_SYS}
+
+Current EAP customer data (${S.customers.length} total):
+${customerSummary||'No customers loaded.'}
+
+Answer questions about these customers, help draft emails, suggest actions, or analyze situations.
+Be concise and specific. Use bullet points for lists. If asked to draft an email, write a complete professional email.`;
+
+  try{
+    let full='';
+    thinkEl.innerHTML = '';
+    await ollamaChatStream(sys, msg, token=>{
+      full+=token;
+      thinkEl.innerHTML = mdToHtml(full);
+      thinkEl.parentElement.parentElement.scrollTop = 999999;
+    });
+    S.chatHistory.push({role:'assistant',content:full});
+    addLog('💬','Chat',msg.slice(0,60)+(msg.length>60?'…':''));
+  }catch(e){
+    thinkEl.innerHTML = `Error: ${e.message}`;
+  }
+}
+
+function appendChatMsg(role, content, returnEl=false){
+  const wrap = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = `chat-msg ${role}`;
+  if(role==='agent'){
+    div.innerHTML = `<div class="agent-icon">⚡ EAP Agent</div><div class="msg-body">${typeof content==='string'?mdToHtml(content):content}</div>`;
+    wrap.appendChild(div);
+    wrap.scrollTop = 999999;
+    if(returnEl) return div.querySelector('.msg-body');
+  } else {
+    div.textContent = content;
+    wrap.appendChild(div);
+    wrap.scrollTop = 999999;
+  }
+  return div;
+}
+
+function mdToHtml(t){
+  return t
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g,'<em>$1</em>')
+    .replace(/`(.+?)`/g,'<code style="background:rgba(0,0,0,.3);padding:1px 5px;border-radius:3px">$1</code>')
+    .replace(/^### (.+)$/gm,'<h4 style="margin:8px 0 4px;color:var(--accent2)">$1</h4>')
+    .replace(/^## (.+)$/gm,'<h3 style="margin:8px 0 4px;color:var(--accent2)">$1</h3>')
+    .replace(/^• (.+)$/gm,'<li style="margin-left:14px">$1</li>')
+    .replace(/^- (.+)$/gm,'<li style="margin-left:14px">$1</li>')
+    .replace(/\n/g,'<br>');
+}
+
+// ══════════════════════════════════════════════════════════════════
+// DATA PROCESSING
+// ══════════════════════════════════════════════════════════════════
+function processRows(){
+  S.actions = S.customers.map(row=>{
+    const ev = evaluate(row);
+    const d  = days(row['Days Since Last Touchpoint']||row['Days Since Last Touchpoint ']);
+    return {
+      ...ev,
+      name: row['Customer Name']||'Unknown',
+      company: row['Company']||'',
+      eap: row['EAP Program']||'',
+      daysAgo: d,
+      row,
+      aiInsight: null,
+      aiRisk: null
+    };
+  }).sort((a,b)=>{
+    const po={HIGH:0,MEDIUM:1,LOW:2};
+    if(po[a.priority]!==po[b.priority]) return po[a.priority]-po[b.priority];
+    return b.daysAgo-a.daysAgo;
+  });
+  updateMetrics();
+  renderQueue();
+  renderStatus();
+  populateFilters();
+}
+
+function updateMetrics(){
+  const total=S.customers.length;
+  const high=S.actions.filter(a=>a.priority==='HIGH').length;
+  const med=S.actions.filter(a=>a.priority==='MEDIUM').length;
+  document.getElementById('m-total').textContent=total||'—';
+  document.getElementById('m-high').textContent=high||'—';
+  document.getElementById('m-med').textContent=med||'—';
+  document.getElementById('m-ai').textContent=S.aiInsights||'—';
+  document.getElementById('queue-badge').textContent=S.actions.filter(a=>a.priority!=='LOW').length;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// RENDERING
+// ══════════════════════════════════════════════════════════════════
+function applyFilters(){
+  const eap = document.getElementById('f-eap').value;
+  const pri = document.getElementById('f-pri').value;
+  const act = document.getElementById('f-act').value;
+  const filtered = S.actions.filter(a=>
+    (!eap||a.eap===eap) &&
+    (!pri||a.priority===pri) &&
+    (!act||a.action===act)
+  );
+  renderQueue(filtered);
+}
+
+function renderQueue(list){
+  list = list||S.actions;
+  const eap = document.getElementById('f-eap').value;
+  const pri = document.getElementById('f-pri').value;
+  if(!list) return;
+  const filtered = S.actions.filter(a=>
+    (!eap||a.eap===eap) &&
+    (!pri||a.priority===pri)
+  );
+  const use = list===S.actions ? filtered : list;
+  if(!use.length){
+    document.getElementById('queue-list').innerHTML='<div style="text-align:center;padding:30px;color:var(--muted)">No actions match current filters</div>';
+    return;
+  }
+  document.getElementById('queue-list').innerHTML = use.map((a,i)=>buildCard(a,i)).join('');
+}
+
+function buildCard(a,i){
+  const dWarn = a.daysAgo>=10;
+  const emailDraft = a.row._aiEmail || genEmail(a.type, a.row);
+  const jiraDraft  = genJira(a.row);
+  const evidLines  = [];
+  evidLines.push(`Missing stage: <strong>${a.missing||'N/A'}</strong>`);
+  evidLines.push(`Days since touchpoint: <strong style="color:${dWarn?'var(--high)':'var(--low)'}">${a.daysAgo===999?'Unknown':a.daysAgo+'d'}</strong>`);
+  if(isY(a.row['Build Downloaded'])) evidLines.push('Build downloaded: ✓');
+  if(isY(a.row['Product Actively Testing'])) evidLines.push('Actively testing: ✓');
+  if(a.aiInsight) evidLines.push(`<span style="color:var(--ai2)">🧠 AI: ${a.aiInsight}</span>`);
+
+  return `<div class="action-card" id="card-${i}">
+  <div class="card-hd" onclick="toggleCard(${i})">
+    <div class="stripe stripe-${a.priority==='HIGH'?'high':a.priority==='MEDIUM'?'med':'low'}"></div>
+    <span class="priority-badge p-${a.priority}">${a.priority}</span>
+    <div class="card-name">${esc(a.name)} <span style="color:var(--muted);font-weight:400;font-size:.85em">· ${esc(a.company)}</span></div>
+    ${a.aiInsight?'<span class="ai-tag">AI</span>':''}
+    <div class="card-meta">${a.daysAgo===999?'':a.daysAgo+'d'} · ${esc(a.eap)}</div>
+    <span class="chev">▶</span>
   </div>
-  <div class="card-bd" id="${id}-bd">
-    <div class="info-grid">
-      <div class="ig"><div class="lbl">Current Stage</div><div class="val">${a.stage||'—'}</div></div>
-      <div class="ig"><div class="lbl">Missing Step</div><div class="val">${a.missing}</div></div>
-      <div class="ig"><div class="lbl">Stakeholder</div><div class="val">${a.stakeholder||'—'}</div></div>
-      <div class="ig"><div class="lbl">Suggested Owner</div><div class="val">${a.owner||'—'}</div></div>
+  <div class="card-body">
+    <div style="font-size:.82em;color:var(--muted);margin-bottom:10px">Action: <strong style="color:var(--text)">${esc(a.action)}</strong></div>
+    <div class="ctabs">
+      <div class="ctab active" onclick="ctab(${i},'ev',this)">Evidence</div>
+      <div class="ctab" onclick="ctab(${i},'email',this)">Draft Email</div>
+      <div class="ctab" onclick="ctab(${i},'jira',this)">Jira Draft</div>
     </div>
-    ${twHtml}
-    <div class="team-str">AM: ${a.am||'—'} &nbsp;·&nbsp; SE: ${a.se||'—'} &nbsp;·&nbsp; PM: ${a.pm||'—'} &nbsp;·&nbsp; Contact: ${a.contact||'—'}</div>
-    <hr class="divider">
-    <div class="tabs">${tabs}</div>
-    ${evidenceTab}${emailTab}${jiraTab}
+    <div class="ctab-content active" id="ev-${i}">
+      <div class="evidence-block">
+        <div class="ev-label">Signal Summary</div>
+        ${evidLines.map(l=>`<p>${l}</p>`).join('')}
+      </div>
+    </div>
+    <div class="ctab-content" id="email-${i}">
+      <div class="text-area-wrap">
+        <textarea class="draft-area" id="email-text-${i}">${emailDraft}</textarea>
+        <button class="btn btn-ghost btn-xs copy-btn" onclick="copyText('email-text-${i}',this)">Copy</button>
+      </div>
+      ${S.ollamaOk?`<button class="btn btn-ai btn-sm ai-gen-btn" onclick="aiWriteEmail(${i})">🤖 AI Rewrite</button>`:''}
+    </div>
+    <div class="ctab-content" id="jira-${i}">
+      <div class="text-area-wrap">
+        <textarea class="draft-area" id="jira-text-${i}">${jiraDraft}</textarea>
+        <button class="btn btn-ghost btn-xs copy-btn" onclick="copyText('jira-text-${i}',this)">Copy</button>
+      </div>
+    </div>
   </div>
 </div>`;
 }
 
-function toggleCard(id) {
-  const hd = document.getElementById(id+'-hd');
-  const bd = document.getElementById(id+'-bd');
-  hd.classList.toggle('open');
-  bd.classList.toggle('open');
+async function aiWriteEmail(i){
+  if(!S.ollamaOk) return;
+  const a = S.actions[i];
+  const btn = document.querySelector(`#card-${i} .ai-gen-btn`);
+  if(btn){ btn.disabled=true; btn.textContent='🤖 Writing…'; }
+  try{
+    const email = await aiGenerateEmail(a.row, a.type);
+    const ta = document.getElementById(`email-text-${i}`);
+    if(ta){ ta.value=email; a.row._aiEmail=email; }
+    addLog('✍️','AI Email',`Generated email for ${a.name}`);
+  }catch(e){ addLog('⚠️','AI Email',`Failed: ${e.message}`); }
+  if(btn){ btn.disabled=false; btn.textContent='🤖 AI Rewrite'; }
 }
 
-function switchTab(id, pane, btn) {
-  const card = document.getElementById(id+'-bd');
-  card.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
-  card.querySelectorAll('.pane').forEach(p => p.classList.remove('on'));
-  btn.classList.add('on');
-  const target = document.getElementById(id+'-'+pane);
-  if (target) target.classList.add('on');
+function renderStatus(){
+  const eap = document.getElementById('f-eap').value;
+  const rows = eap ? S.customers.filter(c=>c['EAP Program']===eap) : S.customers;
+  const body = document.getElementById('status-body');
+  if(!rows.length){ body.innerHTML='<tr><td colspan="9" style="color:var(--muted);text-align:center;padding:20px">No data</td></tr>'; return; }
+  body.innerHTML = rows.map(r=>{
+    const ev=evaluate(r);
+    const d=days(r['Days Since Last Touchpoint']||r['Days Since Last Touchpoint ']);
+    const dClass=d>=10?'days-warn':'days-ok';
+    const dot=v=>isY(v)?'<span class="yes-dot"></span>':'<span class="no-dot"></span>';
+    return `<tr>
+      <td style="font-weight:600">${esc(r['Customer Name']||'')}</td>
+      <td>${esc(r['Company']||'')}</td>
+      <td style="font-size:.78em;color:var(--muted)">${esc(r['EAP Program']||'')}</td>
+      <td><span class="priority-badge p-${ev.priority}">${ev.priority}</span></td>
+      <td style="font-size:.8em;color:var(--muted)">${esc(ev.missing||'Complete')}</td>
+      <td class="${dClass}">${d===999?'—':d+'d'}</td>
+      <td>${dot(r['Build Downloaded'])}</td>
+      <td>${dot(r['Product Actively Testing'])}</td>
+      <td>${dot(r['Feedback Session Scheduled'])}</td>
+    </tr>`;
+  }).join('');
 }
 
-function copyText(elId, btn) {
-  const el = document.getElementById(elId);
-  el.select();
-  document.execCommand('copy');
-  const orig = btn.textContent;
-  btn.textContent = '✅ Copied!';
-  setTimeout(() => btn.textContent = orig, 2000);
+function populateFilters(){
+  const eaps=[...new Set(S.customers.map(c=>c['EAP Program']).filter(Boolean))];
+  const acts=[...new Set(S.actions.map(a=>a.action))];
+  const fe=document.getElementById('f-eap');
+  const fa=document.getElementById('f-act');
+  const curEap=fe.value;
+  fe.innerHTML='<option value="">All EAPs</option>'+eaps.map(e=>`<option${e===curEap?' selected':''}>${esc(e)}</option>`).join('');
+  fa.innerHTML='<option value="">All actions</option>'+acts.map(a=>`<option>${esc(a)}</option>`).join('');
 }
 
-// ══════════════════════════════════════════════════════════
-// EXPORTS
-// ══════════════════════════════════════════════════════════
-function exportCSV() {
-  const cols = ['Priority','EAP Name','Customer Name','Current Stage','Missing Step','Recommended Action','Stakeholder to Contact','Suggested Owner','Days Since Touchpoint','Evidence'];
-  const rows = [cols];
-  allActions.forEach(a => {
-    rows.push([a.priority,a.eap,a.cust,a.stage,a.missing,a.action,a.stakeholder,a.owner,a.dst!==null?a.dst:'N/A',a.notes].map(v=>`"${(v||'').replace(/"/g,'""')}"`));
+// ══════════════════════════════════════════════════════════════════
+// LOG
+// ══════════════════════════════════════════════════════════════════
+function addLog(icon, type, text, sub=''){
+  const now=new Date().toLocaleTimeString();
+  S.log.unshift({icon,type,text,sub,time:now});
+  if(S.log.length>200) S.log.pop();
+  renderLog();
+}
+
+function renderLog(){
+  const q=(document.getElementById('log-search').value||'').toLowerCase();
+  const entries=S.log.filter(l=>!q||(l.text+l.sub+l.type).toLowerCase().includes(q));
+  document.getElementById('log-box').innerHTML = entries.length
+    ? entries.map(l=>`<div class="log-entry">
+        <div class="log-icon">${l.icon}</div>
+        <div class="log-time">${l.time}</div>
+        <div class="log-text">${esc(l.text)}${l.sub?`<div class="log-sub">${esc(l.sub)}</div>`:''}</div>
+      </div>`).join('')
+    : '<div style="text-align:center;padding:20px;color:var(--muted)">No log entries</div>';
+}
+
+function clearLog(){ S.log=[]; renderLog(); }
+
+// ══════════════════════════════════════════════════════════════════
+// UI HELPERS
+// ══════════════════════════════════════════════════════════════════
+function showTab(name){
+  document.querySelectorAll('.tab').forEach((t,i)=>{
+    const names=['queue','chat','analyze','status','log'];
+    t.classList.toggle('active',names[i]===name);
   });
-  download('eap_action_queue.csv', rows.map(r=>r.join(',')).join('\n'), 'text/csv');
+  document.querySelectorAll('.tab-content').forEach(tc=>{tc.classList.remove('active')});
+  document.getElementById('tab-'+name).classList.add('active');
+  if(name==='status') renderStatus();
 }
 
-function exportDrafts() {
-  const lines = [`# EAP Drafts Export\nGenerated: ${new Date().toLocaleString()}\n\n---\n`];
-  allActions.filter(a=>!['complete','no_action'].includes(a.atype)).forEach(a => {
-    lines.push(`## [${a.priority}] ${a.cust} · ${a.eap}\n**Action:** ${a.action}  \n**Stage:** ${a.stage} → ${a.missing}\n`);
-    if (a.notes) lines.push(`**Evidence:** ${a.notes}\n`);
-    if (a.emailDraft) lines.push(`### Draft Email\n\`\`\`\n${a.emailDraft}\n\`\`\`\n`);
-    if (a.jiraDraft) lines.push(`### Jira Draft\n\`\`\`\n${a.jiraDraft}\n\`\`\`\n`);
-    lines.push('---\n');
+function toggleCard(i){
+  const card=document.getElementById('card-'+i);
+  card.classList.toggle('open');
+}
+
+function ctab(i,name,el){
+  const card=document.getElementById('card-'+i);
+  card.querySelectorAll('.ctab').forEach(t=>t.classList.remove('active'));
+  card.querySelectorAll('.ctab-content').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById(`${name}-${i}`).classList.add('active');
+}
+
+function copyText(id,btn){
+  const el=document.getElementById(id);
+  if(!el) return;
+  navigator.clipboard.writeText(el.value||el.textContent).then(()=>{
+    const orig=btn.textContent; btn.textContent='Copied!';
+    setTimeout(()=>btn.textContent=orig,1500);
   });
-  download('eap_drafts.md', lines.join('\n'), 'text/markdown');
 }
 
-function downloadTemplate() {
-  const headers = ["EAP Name","Customer Name","Customer Contact","Customer Time Zone","AM Name","AM Email","SE Name","SE Email","PM Name","PM Email","Feature Requested","Current Stage","Customer Interest Status","Kickoff Scheduled Date","Kickoff Completed","Registration Completed","Onboarding Scheduled Date","Onboarding Completed","Build Shared","Build Downloaded / Installed","Product Actively Testing","Feedback Session Scheduled Date","Feedback Received","Jira Ticket Created","Jira Ticket ID","Jira Status","PM/Engineering Last Update Date","Customer Updated","Close-Out Email Sent","Survey Sent","Last Customer Touchpoint Date","Notes / Evidence"];
-  download('eap_template.csv', headers.map(h=>`"${h}"`).join(','), 'text/csv');
-}
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-function download(filename, content, mime) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([content], {type: mime}));
-  a.download = filename;
-  a.click();
-}
+function openAISettings(){ document.getElementById('ai-settings-section').scrollIntoView({behavior:'smooth'}); }
 
-// ══════════════════════════════════════════════════════════
-// FILE HANDLING
-// ══════════════════════════════════════════════════════════
-function loadSample() {
-  processRows(parseCSV(SAMPLE_CSV));
-}
-
-document.getElementById('file-input').addEventListener('change', e => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => processRows(parseCSV(ev.target.result));
-  reader.readAsText(file);
-});
-
-const dz = document.getElementById('drop-zone');
-dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
-dz.addEventListener('dragleave', () => dz.classList.remove('over'));
-dz.addEventListener('drop', e => {
+// ══════════════════════════════════════════════════════════════════
+// FILE I/O
+// ══════════════════════════════════════════════════════════════════
+function dz(e,action){
   e.preventDefault();
-  dz.classList.remove('over');
-  const file = e.dataTransfer.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => processRows(parseCSV(ev.target.result));
-  reader.readAsText(file);
-});
+  const dz=document.getElementById('drop-zone');
+  if(action==='over') dz.classList.add('over');
+  else if(action==='leave') dz.classList.remove('over');
+  else if(action==='drop'){
+    dz.classList.remove('over');
+    const file=e.dataTransfer.files[0];
+    if(file) loadFile(file);
+  }
+}
+
+function loadFile(file){
+  if(!file) return;
+  const ext=file.name.split('.').pop().toLowerCase();
+  if(ext==='csv'){
+    const r=new FileReader();
+    r.onload=e=>{ loadCSV(e.target.result); addLog('📂','Data','Loaded '+file.name); };
+    r.readAsText(file);
+  } else {
+    alert('Please upload a CSV file. Excel support requires a backend server.');
+  }
+}
+
+function loadCSV(text){
+  const rows = parseCSV(text);
+  if(rows.length<2){ alert('CSV appears empty or invalid.'); return; }
+  const headers = rows[0];
+  S.customers = rows.slice(1).filter(r=>r.some(c=>c.trim())).map(r=>{
+    const obj={};
+    headers.forEach((h,i)=>obj[h.trim()]=r[i]?.trim()||'');
+    return obj;
+  });
+  processRows();
+  addLog('✅','Data',`Loaded ${S.customers.length} customers`);
+}
+
+function parseCSV(text){
+  const rows=[];let row=[],field='',inQ=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i],n=text[i+1];
+    if(inQ){
+      if(c==='"'&&n==='"'){field+='"';i++;}
+      else if(c==='"') inQ=false;
+      else field+=c;
+    } else {
+      if(c==='"') inQ=true;
+      else if(c===','){row.push(field);field='';}
+      else if(c==='\n'||(c==='\r'&&n==='\n')){
+        if(c==='\r') i++;
+        row.push(field);rows.push(row);row=[];field='';
+      } else field+=c;
+    }
+  }
+  if(field||row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+function exportCSV(){
+  if(!S.customers.length){ alert('No data loaded.'); return; }
+  const keys=Object.keys(S.customers[0]);
+  const lines=[keys.map(k=>`"${k}"`).join(','),...S.customers.map(r=>keys.map(k=>`"${(r[k]||'').replace(/"/g,'""')}"`).join(','))];
+  download('eap_export.csv',lines.join('\n'),'text/csv');
+}
+
+function download(name,content,type){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([content],{type}));
+  a.download=name; a.click();
+}
+
+// ══════════════════════════════════════════════════════════════════
+// SAMPLE DATA
+// ══════════════════════════════════════════════════════════════════
+const SAMPLE = `EAP Program,Customer Name,Company,Recruited,Kickoff Completed,Registration Completed,Onboarding Completed,Build Downloaded,Product Actively Testing,Feedback Session Scheduled,Jira Tickets Created,PM Follow-Up Completed,Customer Update Sent,Close-Out Completed,EAP Status,Days Since Last Touchpoint,Notes
+DNS Security EAP,Sarah Chen,Acme Corp,Yes,Yes,Yes,Yes,Yes,Yes,No,No,No,No,No,Active,14,Actively testing for 3 weeks; no feedback session yet
+DNS Security EAP,Marcus Webb,TechFlow Inc,Yes,Yes,Yes,No,No,No,No,No,No,No,No,Active,21,Has not downloaded build after 3 reminders
+DNS Security EAP,Priya Patel,Global Networks,Yes,No,No,No,No,No,No,No,No,No,No,Active,8,Kickoff not yet scheduled
+BloxOne Threat Defense EAP,James Liu,SecureNet,Yes,Yes,Yes,Yes,Yes,Yes,Yes,Yes,No,No,No,Active,5,Feedback done; waiting on PM Jira follow-up
+BloxOne Threat Defense EAP,Emily Rodriguez,DataSafe Co,Yes,Yes,Yes,Yes,Yes,No,No,No,No,No,No,Active,12,Downloaded build but no testing signals yet
+BloxOne Threat Defense EAP,Robert King,CloudFirst,Yes,Yes,No,No,No,No,No,No,No,No,No,Active,18,Registration stalled — escalation needed
+NIOS 9.0 Beta EAP,Amanda Foster,NetOps Ltd,Yes,Yes,Yes,Yes,Yes,Yes,Yes,Yes,Yes,Yes,No,Active,3,Nearly complete — close-out pending
+NIOS 9.0 Beta EAP,David Chang,Infra Systems,Yes,Yes,Yes,Yes,No,No,No,No,No,No,No,Active,16,Build not installed — overdue
+NIOS 9.0 Beta EAP,Lisa Thompson,DataCore Inc,Yes,Yes,Yes,Yes,Yes,Yes,No,No,No,No,No,Active,9,Testing; feedback session not scheduled
+Cloud Services EAP,Kevin Marsh,Apex Networks,No,No,No,No,No,No,No,No,No,No,No,Active,2,Recently identified — not yet recruited
+Cloud Services EAP,Natalie Brooks,BlueCloud LLC,Yes,Yes,Yes,Yes,Yes,Yes,Yes,Yes,Yes,No,No,Active,7,Awaiting customer update after PM follow-up
+Cloud Services EAP,Tom Sanders,NetEdge Corp,Yes,Yes,Yes,Yes,Yes,Yes,Yes,Yes,Yes,Yes,Yes,Dropped,30,Decided not to continue — final feedback not captured`;
+
+function loadSample(){
+  loadCSV(SAMPLE);
+  addLog('📂','Data','Sample data loaded — 12 customers across 4 EAPs');
+}
+
+// ══════════════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════════════
+(async function init(){
+  addLog('⚡','System','EAP Agent started');
+  addLog('🤖','AI','Checking for Ollama at localhost:11434…');
+  await checkOllama();
+
+  if(!S.ollamaOk){
+    // Show setup notice in chat
+    appendChatMsg('agent',`**Ollama not detected** — to enable AI features:
+
+1. Install Ollama: \`curl -fsSL https://ollama.ai/install.sh | sh\`
+2. Pull a model: \`ollama pull llama3.2\`
+3. Click **↻ Reconnect** in the sidebar
+
+**Without Ollama:** the rule engine still works — load your CSV and see the action queue.
+The AI features (smart analysis, contextual emails, chat) activate once Ollama is running.`);
+  }
+
+  document.getElementById('run-cycle-btn').disabled = !S.ollamaOk;
+})();
 </script>
 </body>
 </html>
