@@ -1,0 +1,89 @@
+Meeting Transcript
+Date: June 3, 2026 — 10:00 AM PST
+Topic: EAP Lifecycle Review — Q2 2026
+Attendees: Sarah Chen (PM), Marcus Rivera (Engineering Lead), Priya Patel (Customer Success), Tom Nguyen (QA), Lisa Okonkwo (Sales)
+
+---
+
+Sarah: Good morning everyone. Let's get started. The goal today is to review the current state of our three active EAPs and decide on priorities for the next sprint.
+
+Marcus: Sounds good. I'll share my screen once we get to the technical items.
+
+Sarah: Great. First, DNS Security EAP. Priya, can you give us the customer update?
+
+Priya: Sure. Acme Corporation has confirmed the build installation as of yesterday. They're running tests this week. TechStart still hasn't installed — I've pinged their contact twice with no response.
+
+Sarah: How long has TechStart been silent?
+
+Priya: Fourteen days now.
+
+Sarah: That's past our threshold. Tom, can you check if there's a known issue with the installer on their OS version?
+
+Tom: I can do that. I'll check the test matrix and get back to you by end of day tomorrow.
+
+Sarah: Perfect. Marcus, can you also prepare a clean installer package specifically for TechStart's environment by Friday?
+
+Marcus: Yes, that's doable. I'll need Priya to confirm the exact OS version they're running first.
+
+Priya: I'll email TechStart today and follow up with Marcus once I hear back — I'll aim to confirm by tomorrow noon.
+
+---
+
+Sarah: Moving to BloxOne Threat Defense. Lisa, any commercial updates?
+
+Lisa: GlobalNet Systems sent us detailed feedback last Thursday. Really positive overall. They flagged two bugs though — one with DNS failover and one with the reporting dashboard. I'm forwarding the feedback email to Marcus after this call.
+
+Marcus: I saw part of it. The failover bug is a known issue — I have a fix ready, just needs review. The dashboard one is new to me.
+
+Sarah: Let's get that failover fix reviewed and merged this sprint. Marcus, can you open Jira tickets for both bugs today?
+
+Marcus: Will do. I'll open them before lunch.
+
+Sarah: Tom, please assign yourself to QA on both tickets once they're created. Target closing them by June 10.
+
+Tom: Noted, I'll pick them up as soon as the tickets are live.
+
+Sarah: Lisa, once those are resolved, can you draft a customer update email to GlobalNet? I want to keep them warm.
+
+Lisa: Absolutely. I'll draft it by June 12 and share for review before sending.
+
+---
+
+Sarah: Last item — NIOS 9.0 Beta. We have three customers, but PM Singh on the engineering side has been silent for 21 days on the Jira ticket raised by MidwestHealth. That's blocking their onboarding.
+
+Marcus: Yeah, ENG-4821 is sitting unassigned.
+
+Sarah: Marcus, can you escalate that to PM Singh's manager today and set a 48-hour response expectation?
+
+Marcus: Yes, I'll send the escalation email this afternoon.
+
+Priya: I'll also reach out directly to MidwestHealth to apologise for the delay and give them an expected timeline of June 6.
+
+Sarah: Good. Let's make sure we don't lose them. Priya, please also schedule their onboarding call for the week of June 9 once we have the Jira response.
+
+---
+
+Sarah: Quick housekeeping — we agreed last session to formalise our EAP close-out checklist. Has anyone made progress on that?
+
+Marcus: I drafted a template. It's in Confluence. I'll share the link in Slack after this call.
+
+Sarah: Great. Lisa, can you review Marcus's template and add any sales / post-EAP survey items by June 7?
+
+Lisa: Sure, I'll have that done by end of day on June 7.
+
+---
+
+Sarah: Alright, I think we've covered everything. To recap the key decisions:
+1. TechStart gets escalated installer support — dedicated package by Friday.
+2. GlobalNet bugs get Jira tickets today, target fix by June 10.
+3. MidwestHealth Jira escalated to PM Singh's manager today, onboarding scheduled for week of June 9.
+4. EAP close-out checklist review due June 7.
+
+Next sync is June 10 at 10 AM PST. Marcus will send a calendar invite.
+
+Marcus: Will do.
+
+Sarah: Thanks everyone, see you then.
+
+---
+[Recording ends 10:48 AM PST]
